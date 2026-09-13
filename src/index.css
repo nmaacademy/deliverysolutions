@@ -2,6 +2,11 @@
 
 @theme {
   --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* One radius scale for the customer app. Buttons, chips and pills stay rounded-full; every other
+     surface uses one of these three, and anything nested inside a card steps down a size. */
+  --radius-sheet: 32px;
+  --radius-card: 24px;
+  --radius-tile: 16px;
   --animate-shimmer: shimmer 2s infinite;
   /* Active segment of the order tracker: fills left to right, then fades and starts over. */
   --animate-tracker-fill: tracker-fill 1.8s ease-in-out infinite;
@@ -17,9 +22,26 @@
 }
 
 :root {
-  /* Footprint of the fixed customer navbar: pill height + its bottom offset + the iPhone safe area.
-     Customer pages pad their bottom by this, and the floating cart sits just above it. */
-  --client-nav-space: calc(76px + env(safe-area-inset-bottom));
+  /* Footprint of the fixed customer navbar: the 64px pill plus its gap to the bottom edge, which grows
+     into the home-indicator safe area on phones that have one. Customer pages pad their bottom by this. */
+  --client-nav-space: calc(64px + max(12px, env(safe-area-inset-bottom)));
+}
+
+/* The v1 "light on glass" edge: a hairline white border with a 1px highlight along the top.
+   glass-edge is for surfaces in the page flow; glass-float adds the drop shadow of floating chrome. */
+@utility glass-edge {
+  border: 0.5px solid rgb(255 255 255 / 0.16);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.14), 0 8px 24px rgb(0 0 0 / 0.25);
+}
+
+@utility glass-float {
+  border: 0.5px solid rgb(255 255 255 / 0.2);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.15), 0 8px 32px rgb(0 0 0 / 0.45);
+}
+
+/* Opal glow centred on the element. No downward offset, so it hugs the shape instead of pooling under it. */
+@utility glow-opal {
+  box-shadow: 0 0 0 0.5px rgb(212 234 230 / 0.5), 0 0 20px -2px rgb(212 234 230 / 0.35);
 }
 
 @layer utilities {
@@ -32,7 +54,14 @@
   }
 }
 
+/* Dark native controls (the time picker, autofill) without declaring the whole page dark, which would
+   also turn the browser's own toolbar dark and take away the light it throws on the glass navbar. */
+input, select, textarea {
+  color-scheme: dark;
+}
+
 html, body {
+  background-color: #18181b;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
   -webkit-overflow-scrolling: touch;

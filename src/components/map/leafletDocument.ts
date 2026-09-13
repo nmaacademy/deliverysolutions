@@ -70,10 +70,15 @@ const BASE_SCRIPT = `
 
   // ---- Markers ----
 
-  // Filled glyphs from Material Icons (Apache 2.0), 24x24: restaurant, home.
+  // Glyphs, 24x24, cut out of the pin: a soup pot with a ladle for the restaurant (rim, pot and side
+  // handles, all wound the same way so the overlaps leave no seam) and a home from Material Icons
+  // (Apache 2.0) for the client. GLYPH_LINES are cut as strokes: the ladle is a line, not a shape.
   var GLYPHS = {
-    restaurant: 'M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z',
+    restaurant: 'M2 9.8h20v2.4H2zM4 12h16v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM1 13.4h3.5v2.4H1zM19.5 13.4H23v2.4h-3.5z',
     client: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'
+  };
+  var GLYPH_LINES = {
+    restaurant: 'M12.5 10 16.4 3.9a1.8 1.8 0 0 1 3.1 1.8'
   };
   // Top-down car, nose up (0deg = north): body, mirrors, windows, roof, head/tail lights.
   var CAR_SVG = '<svg class="courier-car" viewBox="0 0 24 44">' +
@@ -85,16 +90,20 @@ const BASE_SCRIPT = `
     '<rect x="4.6" y="2.7" width="4" height="1.8" rx="0.9" fill="#fde68a"/><rect x="15.4" y="2.7" width="4" height="1.8" rx="0.9" fill="#fde68a"/>' +
     '<rect x="4.9" y="39.6" width="3.6" height="1.5" rx="0.75" fill="#ef4444"/><rect x="15.5" y="39.6" width="3.6" height="1.5" rx="0.75" fill="#ef4444"/>' +
     '</svg>';
-  var PIN_COLORS = { restaurant: '#fb923c', client: '#D4EAE6' };
+  var PIN_COLORS = { restaurant: '#D4EAE6', client: '#fafafa' };
   // 40x50 teardrop: head centred at (20,19) with r=17, tip at (20,48).
   var PIN_PATH = 'M20 48C20 48 37 31.5 37 19A17 17 0 1 0 3 19C3 31.5 20 48 20 48Z';
   var pinSeq = 0;
 
   function pinHtml(type) {
     var maskId = 'pin-cut-' + (++pinSeq);
+    var place = 'transform="translate(9.5 8.5) scale(0.875)"';
+    var line = GLYPH_LINES[type]
+      ? '<path ' + place + ' d="' + GLYPH_LINES[type] + '" fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'
+      : '';
     return '<div class="map-pin"><svg class="pin-svg" width="40" height="50" viewBox="0 0 40 50">' +
       '<defs><mask id="' + maskId + '"><rect width="40" height="50" fill="#fff"/>' +
-      '<path transform="translate(9.5 8.5) scale(0.875)" d="' + GLYPHS[type] + '" fill="#000"/></mask></defs>' +
+      '<path ' + place + ' d="' + GLYPHS[type] + '" fill="#000"/>' + line + '</mask></defs>' +
       '<path d="' + PIN_PATH + '" fill="' + PIN_COLORS[type] + '" mask="url(#' + maskId + ')"/>' +
       '<path d="' + PIN_PATH + '" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1"/>' +
       '</svg></div>';

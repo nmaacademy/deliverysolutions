@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from 'react';
-import { motion } from 'motion/react';
+import { memo, useEffect, useMemo } from 'react';
+import { motion, type Variants } from 'motion/react';
+import { EASE_OUT, revealOnMount, revealOnView, riseItem, staggerGroup } from '../../lib/motion';
 import { Plus } from 'lucide-react';
 import { MenuItem, OrderType } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
@@ -25,9 +26,15 @@ interface Props {
 }
 
 /** Anchor id for a category block, used by the quick-access chips. */
+/** The hairlines beside a category title draw outwards from it as the title arrives. */
+const DIVIDER: Variants = {
+  hidden: { scaleX: 0, opacity: 0 },
+  show: { scaleX: 1, opacity: 1, transition: { duration: 0.4, ease: EASE_OUT } },
+};
+
 const categoryId = (category: string) => `meniu-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
-export default function MenuScreen({
+function MenuScreen({
   menuItems,
   orderType,
   setOrderType,
@@ -73,9 +80,9 @@ export default function MenuScreen({
         {/* Quick access to a category. Buttons, not #anchors, so the page URL stays clean. */}
         {categories.length > 1 && (
           <nav aria-label="Categorii" className="mt-5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 overflow-x-auto no-scrollbar">
-            <ul className="flex gap-2 w-max">
+            <motion.ul variants={staggerGroup(0.02, 0)} {...revealOnMount} className="flex gap-2 w-max">
               {categories.map(category => (
-                <li key={category}>
+                <motion.li key={category} variants={riseItem}>
                   <button
                     type="button"
                     onClick={() => {
@@ -90,9 +97,9 @@ export default function MenuScreen({
                   >
                     {category}
                   </button>
-                </li>
+                </motion.li>
               ))}
-            </ul>
+            </motion.ul>
           </nav>
         )}
       </div>
@@ -105,20 +112,17 @@ export default function MenuScreen({
 
           return (
             <div key={category} id={categoryId(category)} className="mb-20 scroll-mt-[96px]">
-              <div className="flex items-center gap-6 mb-12">
-                <div className="flex-1 h-px bg-zinc-700/60"></div>
-                <h2 className="text-3xl font-sans font-semibold tracking-tight text-white text-center">{category}</h2>
-                <div className="flex-1 h-px bg-zinc-700/60"></div>
-              </div>
+              <motion.div {...revealOnView} className="flex items-center gap-6 mb-12">
+                <motion.div variants={DIVIDER} className="flex-1 h-px bg-zinc-700/60 origin-right" />
+                <motion.h2 variants={riseItem} className="text-3xl font-sans font-semibold tracking-tight text-white text-center">{category}</motion.h2>
+                <motion.div variants={DIVIDER} className="flex-1 h-px bg-zinc-700/60 origin-left" />
+              </motion.div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-                {items.map((item, index) => (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: index * 0.1, ease: "easeOut" }}
-                    whileHover={{ y: -4 }}
-                    whileTap={{ scale: 0.98 }}
+              {/* Cards come in one after another as the category scrolls into view. */}
+              <motion.div variants={staggerGroup(0.05, 0)} {...revealOnView} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                {items.map(item => (
+                  <motion.div
+                    variants={riseItem}
                     key={item.id}
                     onClick={() => {
                       if (item.available) {
@@ -126,10 +130,12 @@ export default function MenuScreen({
                         onSelectItem(item);
                       }
                     }}
-                    className={`group flex flex-col gap-4 p-4 sm:p-5 bg-white/5 backdrop-blur-md border-[0.5px] border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.3)] rounded-[32px] cursor-pointer transition-all ${!item.available ? 'opacity-40 grayscale' : 'hover:bg-white/10 hover:border-white/30'}`}
+                    // Press feedback through the CSS `scale` property: it composes with the entrance
+                    // transform, which would otherwise take precedence over a Motion whileTap scale.
+                    className={`group flex flex-col gap-4 p-2 bg-white/[0.05] glass-edge rounded-card cursor-pointer transition-[background-color,scale] duration-150 ease-out active:scale-[0.98] ${!item.available ? 'opacity-40 grayscale' : 'hover:bg-white/[0.09]'}`}
                   >
-                    <div className="w-full h-48 sm:h-64 shrink-0 rounded-[24px] overflow-hidden bg-zinc-800 border border-zinc-700/50 transition-all duration-500 shadow-[0_8px_30px_rgba(161,161,170,0.15)] group-hover:shadow-[0_12px_40px_rgba(161,161,170,0.3)] relative">
-                      <FadeInImage src={item.image} alt={item.name} />
+                    <div className="w-full h-48 sm:h-64 shrink-0 rounded-tile overflow-hidden bg-zinc-800 relative">
+                      <FadeInImage src={item.image} alt={item.name} className="w-full h-full" />
                       {!item.available && (
                         <div className="absolute inset-0 bg-zinc-900/40 flex items-center justify-center backdrop-blur-[2px]">
                           <span className="bg-zinc-900/80 text-white px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider">Indisponibil</span>
@@ -137,7 +143,7 @@ export default function MenuScreen({
                       )}
                     </div>
                     
-                    <div className="flex-1 flex flex-col px-2">
+                    <div className="flex-1 flex flex-col px-3 pb-3">
                       <div className="flex justify-between items-baseline mb-2">
                         <h3 className="text-xl sm:text-2xl font-sans font-semibold tracking-tight text-white group-hover:text-[#D4EAE6] transition-colors leading-tight">{item.name}</h3>
                         <span className="text-[#D4EAE6] font-medium whitespace-nowrap ml-4 text-lg">{item.price} RON</span>
@@ -146,7 +152,7 @@ export default function MenuScreen({
                       
                       <div className="mt-4 pt-4 border-t border-zinc-700/40 flex justify-between items-center">
                         <span className="text-xs uppercase tracking-[0.15em] font-semibold text-zinc-400 group-hover:text-[#D4EAE6] transition-colors">
-                          {item.available ? 'Apasa pentru a personaliza' : 'Stoc Epuizat'}
+                          {item.available ? 'Apasă pentru a personaliza' : 'Stoc epuizat'}
                         </span>
                         {item.available && (
                           <div className="w-8 h-8 rounded-full bg-[#D4EAE6]/10 flex items-center justify-center text-[#D4EAE6] group-hover:bg-[#D4EAE6] group-hover:text-zinc-900 transition-colors">
@@ -157,7 +163,7 @@ export default function MenuScreen({
                     </div>
                   </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </div>
           );
         })}
@@ -165,3 +171,7 @@ export default function MenuScreen({
     </div>
   );
 }
+
+// Memoised: opening a product sheet, the search or the 5-second order poll re-renders App, and
+// rebuilding every card of the page in that same frame held back the first frame of the sheet.
+export default memo(MenuScreen);

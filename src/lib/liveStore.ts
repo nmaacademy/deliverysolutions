@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { MenuItem, Order, OrderActor, OrderStatus } from '../types';
 import { canTransition } from './orderFlow';
 import { MENU_KEY, ORDERS_KEY, normalizeOrders, readMenu, readOrders, saveMenu, saveOrders } from './storage';
+import { supabase } from './supabase';
 
 /**
- * Cross-tab sync for the demo, with no backend involved.
+ * Cross-device sync for the demo.
  *
- * A write lands in localStorage and is announced right away on a BroadcastChannel; other tabs also
- * get the browser's own `storage` event. A slow interval stays behind as a fallback for browsers
- * without BroadcastChannel. Every write re-reads storage first, so a change made in another tab is
- * never overwritten with stale state.
+ * Every change lands locally first, so the UI stays instant and remains usable offline. When the
+ * Supabase variables are configured, the same change is mirrored to the cloud and Realtime brings
+ * it to other devices. BroadcastChannel and the storage event still handle same-device tabs.
  */
 
 type Topic = 'orders' | 'menu';
@@ -113,6 +113,13 @@ function createStore<T>(topic: Topic, read: () => T | null, save: (value: T) => 
     broadcast(topic);
   };
 
+  /** Adopt a cloud snapshot without writing it back to Supabase. */
+  const adopt = (value: T) => {
+    save(value);
+    emit(value);
+    broadcast(topic);
+  };
+
   return {
     /** First tab to open seeds storage with the demo data, so every tab starts from the same list. */
     init(fallback: T): T {
@@ -124,6 +131,8 @@ function createStore<T>(topic: Topic, read: () => T | null, save: (value: T) => 
       return current;
     },
     set,
+    adopt,
+    snapshot: () => current,
     /** Mutate the freshest version in storage, so another tab's change is never lost. */
     update(mutate: (value: T) => T): T | null {
       const latest = read() ?? current;
@@ -157,6 +166,122 @@ const ordersStore = createStore<Order[]>('orders', readOrders, saveOrders);
 const menuStore = createStore<MenuItem[]>('menu', readMenu, saveMenu);
 
 // ---------------------------------------------------------------------------
+// Supabase mirror. The app remains fully functional if this section cannot connect.
+// ---------------------------------------------------------------------------
+
+type CloudRow<T> = { id: string; payload: T; updated_at?: string };
+let cloudStarted = false;
+
+function warnCloud(action: string, error: unknown) {
+  console.warn(`[cloud sync] ${action}`, error);
+}
+
+async function upsertOrder(order: Order) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('demo_orders')
+    .upsert({ id: order.id, payload: order, updated_at: new Date().toISOString() });
+  if (error) warnCloud('order write failed', error);
+}
+
+async function upsertMenu(menu: MenuItem[]) {
+  if (!supabase || menu.length === 0) return;
+  const updatedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('demo_menu_items')
+    .upsert(menu.map(item => ({ id: item.id, payload: item, updated_at: updatedAt })));
+  if (error) warnCloud('menu write failed', error);
+}
+
+function adoptOrder(order: Order) {
+  const normalized = normalizeOrders([order])[0];
+  const current = ordersStore.snapshot() ?? [];
+  const index = current.findIndex(item => item.id === normalized.id);
+  const next = index === -1
+    ? [normalized, ...current]
+    : current.map(item => (item.id === normalized.id ? normalized : item));
+  ordersStore.adopt(next);
+}
+
+function adoptMenuItem(item: MenuItem) {
+  const current = menuStore.snapshot() ?? [];
+  const index = current.findIndex(entry => entry.id === item.id);
+  const next = index === -1
+    ? [...current, item]
+    : current.map(entry => (entry.id === item.id ? item : entry));
+  menuStore.adopt(next);
+}
+
+async function hydrateFromCloud() {
+  if (!supabase) return;
+
+  const [ordersResult, menuResult] = await Promise.all([
+    supabase.from('demo_orders').select('id,payload,updated_at'),
+    supabase.from('demo_menu_items').select('id,payload,updated_at'),
+  ]);
+
+  if (ordersResult.error) {
+    warnCloud('orders could not be loaded', ordersResult.error);
+  } else {
+    const remote = (ordersResult.data as CloudRow<Order>[]).map(row => row.payload);
+    const local = ordersStore.snapshot() ?? [];
+    if (remote.length === 0) {
+      await Promise.all(local.map(upsertOrder));
+    } else {
+      // Cloud is authoritative for matching ids; local-only orders are uploaded (offline recovery).
+      const remoteIds = new Set(remote.map(order => order.id));
+      const localOnly = local.filter(order => !remoteIds.has(order.id));
+      ordersStore.adopt(normalizeOrders([...remote, ...localOnly]));
+      await Promise.all(localOnly.map(upsertOrder));
+    }
+  }
+
+  if (menuResult.error) {
+    warnCloud('menu could not be loaded', menuResult.error);
+  } else {
+    const remote = (menuResult.data as CloudRow<MenuItem>[]).map(row => row.payload);
+    const local = menuStore.snapshot() ?? [];
+    if (remote.length === 0) {
+      await upsertMenu(local);
+    } else {
+      // Keep products introduced by a newer frontend build, while preserving cloud stock/settings.
+      const remoteIds = new Set(remote.map(item => item.id));
+      const localOnly = local.filter(item => !remoteIds.has(item.id));
+      menuStore.adopt([...remote, ...localOnly]);
+      await upsertMenu(localOnly);
+    }
+  }
+}
+
+function startCloudSync() {
+  if (!supabase || cloudStarted) return;
+  cloudStarted = true;
+  void hydrateFromCloud();
+
+  supabase
+    .channel('delivery-demo-state')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'demo_orders' }, event => {
+      const row = event.new as CloudRow<Order>;
+      if (row.payload) adoptOrder(row.payload);
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'demo_orders' }, event => {
+      const row = event.new as CloudRow<Order>;
+      if (row.payload) adoptOrder(row.payload);
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'demo_menu_items' }, event => {
+      const row = event.new as CloudRow<MenuItem>;
+      if (row.payload) adoptMenuItem(row.payload);
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'demo_menu_items' }, event => {
+      const row = event.new as CloudRow<MenuItem>;
+      if (row.payload) adoptMenuItem(row.payload);
+    })
+    .subscribe(status => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') warnCloud(`Realtime: ${status}`, status);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // React bindings
 // ---------------------------------------------------------------------------
 
@@ -164,7 +289,10 @@ const menuStore = createStore<MenuItem[]>('menu', readMenu, saveMenu);
 export function useLiveOrders(fallback: Order[]): Order[] {
   // The demo orders get the same timestamp fields as stored ones, so every screen sees one shape.
   const [orders, setOrders] = useState(() => ordersStore.init(normalizeOrders(fallback)));
-  useEffect(() => ordersStore.subscribe(setOrders), []);
+  useEffect(() => {
+    startCloudSync();
+    return ordersStore.subscribe(setOrders);
+  }, []);
   return orders;
 }
 
@@ -181,7 +309,10 @@ export function useLiveMenu(fallback: MenuItem[]): MenuItem[] {
     const missing = fallback.filter(item => !current.some(stored => stored.id === item.id));
     return missing.length > 0 ? menuStore.update(stored => [...stored, ...missing]) ?? current : current;
   });
-  useEffect(() => menuStore.subscribe(setMenu), []);
+  useEffect(() => {
+    startCloudSync();
+    return menuStore.subscribe(setMenu);
+  }, []);
   return menu;
 }
 
@@ -189,9 +320,23 @@ export function useLiveMenu(fallback: MenuItem[]): MenuItem[] {
 // Writes
 // ---------------------------------------------------------------------------
 
-export const addOrder = (order: Order) => ordersStore.update(orders => [order, ...orders]);
+export const addOrder = (order: Order) => {
+  const result = ordersStore.update(orders => [order, ...orders]);
+  void upsertOrder(order);
+  return result;
+};
 
-export const updateMenu = (mutate: (menu: MenuItem[]) => MenuItem[]) => menuStore.update(mutate);
+export const updateMenu = (mutate: (menu: MenuItem[]) => MenuItem[]) => {
+  let changed: MenuItem[] = [];
+  const result = menuStore.update(current => {
+    const next = mutate(current);
+    const currentById = new Map(current.map(item => [item.id, item]));
+    changed = next.filter(item => JSON.stringify(currentById.get(item.id)) !== JSON.stringify(item));
+    return next;
+  });
+  if (changed.length > 0) void upsertMenu(changed);
+  return result;
+};
 
 export type StatusChange =
   | { ok: true; order: Order }
@@ -222,6 +367,7 @@ export function updateOrderStatus(orderId: string, next: OrderStatus, actor: Ord
       statusHistory: [...(current.statusHistory ?? []), { status: next, actor, at }],
     };
     result = { ok: true, order: updated };
+    void upsertOrder(updated);
     return orders.map(order => (order.id === orderId ? updated : order));
   });
 

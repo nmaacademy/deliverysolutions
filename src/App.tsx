@@ -9,7 +9,12 @@ import { readMyOrderIds, saveMyOrderIds } from './lib/storage';
 import { ClientPage, ClientTab, clientUrl, routeFromUrl, staffUrl } from './lib/routes';
 import MobileBottomNav from './components/navigation/MobileBottomNav';
 import ScrollRestore from './features/client/ScrollRestore';
+import PageTransition from './features/client/PageTransition';
+import ScreenLayer from './features/client/ScreenLayer';
+import TopEdgeFade from './features/client/TopEdgeFade';
+import { SheetBackdrop } from './components/ui/SheetBackdrop';
 import { TRACKER_TOP } from './features/client/layout';
+import { ENTER, EXIT, SHEET_ENTER, SHEET_EXIT } from './lib/motion';
 import HomeScreen from './features/home/HomeScreen';
 import HomeSearch from './features/home/HomeSearch';
 import CustomerMapScreen from './features/map/CustomerMapScreen';
@@ -33,8 +38,16 @@ import { StaffRole, STAFF_AUTH_ENABLED, canOpen, endStaffSession, readStaffSessi
  */
 type ViewState = 'client' | 'cart' | 'confirmation' | 'admin' | 'kitchen' | 'courier';
 
-/** Short and low-travel: page swaps should read as a tab change, not as a screen push. */
-const PAGE_TRANSITION = { duration: 0.2, ease: 'easeOut' } as const;
+/**
+ * The customer app stepping back, dimmed and a little smaller, while the cart or another screen comes
+ * over it. It moves on the sheet's own timing, so the sheet, its backdrop and the app read as one motion.
+ */
+const APP_RECEDED = { opacity: 0.4, transform: 'scale(0.94)' };
+// The transform is dropped once the app is back, or it would become the containing block of fixed elements.
+const APP_PRESENT = { opacity: 1, transform: 'scale(1)', transitionEnd: { transform: 'none' } };
+
+/** Tab order along the navbar, so a page change knows which way to slide. */
+const CLIENT_PAGE_ORDER: ClientPage[] = ['home', 'map', 'menu', 'profile'];
 
 /** How many of each menu item an order contains, for the stock bookkeeping. */
 function countByMenuItem(items: CartItem[]) {
@@ -51,6 +64,15 @@ export default function App() {
   const [clientPage, setClientPage] = useState<ClientPage>(initialRoute.page);
   // Each customer page remembers where it was scrolled to; a page never visited starts at the top.
   const scrollByPage = useRef(new Map<ClientPage, number>());
+  // Which way the last tab change went along the navbar: 1 to the right, -1 to the left. Worked out
+  // here rather than in each navigation path, so the Back button slides the right way too.
+  const previousPage = useRef(clientPage);
+  const pageDirection = useRef(1);
+  if (previousPage.current !== clientPage) {
+    pageDirection.current =
+      CLIENT_PAGE_ORDER.indexOf(clientPage) > CLIENT_PAGE_ORDER.indexOf(previousPage.current) ? 1 : -1;
+    previousPage.current = clientPage;
+  }
 
   // Tidy the address bar once, so a legacy link (/#courier, /menu) settles on its canonical path.
   useEffect(() => {
@@ -60,9 +82,23 @@ export default function App() {
     }
   }, [initialRoute]);
 
+  /** Remembers where the open customer page was scrolled, before something replaces or covers it. */
+  const rememberScroll = useCallback(() => {
+    if (currentView === 'client') scrollByPage.current.set(clientPage, window.scrollY);
+  }, [currentView, clientPage]);
+
   /** Customer tabs are real history entries, so the browser's Back button walks between them. */
   const goToClientPage = useCallback((page: ClientPage) => {
-    setCurrentView('client');
+    if (window.location.pathname !== clientUrl(page)) {
+      history.pushState(null, '', clientUrl(page) + window.location.search);
+    }
+
+    if (currentView !== 'client') {
+      // Back from the cart, an order or a staff screen: the page reopens where it was left.
+      setCurrentView('client');
+      setClientPage(page);
+      return;
+    }
 
     if (page === clientPage) {
       // Tapping the tab you are already on takes you back to the top of it.
@@ -70,22 +106,20 @@ export default function App() {
       return;
     }
 
-    scrollByPage.current.set(clientPage, window.scrollY);
-    if (window.location.pathname !== clientUrl(page)) {
-      history.pushState(null, '', clientUrl(page) + window.location.search);
-    }
+    rememberScroll();
     setClientPage(page);
-  }, [clientPage]);
+  }, [clientPage, currentView, rememberScroll]);
 
   /** The navbar's cart tab pushes the cart screen; every other tab is a real page. */
   const goToClientTab = useCallback((tab: ClientTab) => {
     if (tab === 'cart') {
       triggerVibration(20);
+      rememberScroll();
       setCurrentView('cart');
       return;
     }
     goToClientPage(tab);
-  }, [goToClientPage]);
+  }, [goToClientPage, rememberScroll]);
 
   /** A category card marks the category and opens the Menu page already scrolled to it. */
   const openCategory = useCallback((category: string) => {
@@ -97,6 +131,9 @@ export default function App() {
   }, [goToClientPage]);
 
   const handleScrolledToCategory = useCallback(() => setCategoryJump(null), []);
+  // Stable, so the memoised Home page isn't rebuilt whenever App re-renders.
+  const openMenuPage = useCallback(() => goToClientPage('menu'), [goToClientPage]);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
 
   // Back/forward between customer tabs. Staff screens are separate documents, so they are left alone.
   useEffect(() => {
@@ -125,7 +162,7 @@ export default function App() {
     <StaffLogin role={role} onSuccess={() => handleStaffLogin(role)} onBack={() => goToClientPage('home')} />
   );
 
-  // Orders and the menu live in localStorage and are shared live with the kitchen and courier tabs.
+  // Orders and menu stay instant in localStorage and mirror through Supabase across devices.
   const orders = useLiveOrders(mockOrders);
   const menuItems = useLiveMenu(initialMenu);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -247,6 +284,7 @@ export default function App() {
 
   const openTrackedOrder = (orderId: string) => {
     triggerVibration(20);
+    rememberScroll();
     setTrackedOrderId(orderId);
     setCurrentView('confirmation');
   };
@@ -262,8 +300,12 @@ export default function App() {
 
   const showToast = useCallback((message: string) => setToast({ message, id: Date.now() }), []);
 
-  // The compact status card on the Map page only makes sense while someone is actually driving.
-  const orderOnTheWay = myOrders.find(order => order.status === 'Pe drum') ?? null;
+  // Active orders stay pinned at the top of every customer tab. A product sheet or the search simply
+  // covers them, so they are not taken away and brought back every time one opens and closes.
+  const showTrackers = currentView === 'client';
+
+  // The app grows back from behind a closing sheet around the middle of the screen it returns to.
+  const clientOrigin = `50% ${(scrollByPage.current.get(clientPage) ?? 0) + window.innerHeight / 2}px`;
 
   const handleToggleAvailability = (itemId: string) => {
     updateMenu(prev => prev.map(item =>
@@ -282,17 +324,21 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-[100svh] w-full max-w-[100vw] overflow-x-hidden bg-zinc-900 font-sans text-zinc-100">
+    <div className="min-h-[100svh] w-full overflow-x-clip bg-zinc-900 font-sans text-zinc-100">
+
+      {/* The soft edge where the page slides under the top of the screen. */}
+      {currentView === 'client' && <TopEdgeFade />}
 
       {/* Global Toast Notification */}
       <AnimatePresence>
         {toast && (
           <motion.div
             key={toast.id}
-            initial={{ opacity: 0, y: -50, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: -20, x: '-50%' }}
-            className="fixed top-6 left-1/2 z-[100] flex items-center gap-3 bg-zinc-800/90 backdrop-blur-md border-[0.5px] border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.5)] text-white px-5 py-3 rounded-full text-sm font-medium whitespace-nowrap"
+            initial={{ opacity: 0, transform: 'translateY(-24px) scale(0.95)' }}
+            animate={{ opacity: 1, transform: 'translateY(0px) scale(1)' }}
+            exit={{ opacity: 0, transform: 'translateY(-12px) scale(0.97)', transition: EXIT }}
+            transition={ENTER}
+            className="fixed top-[calc(env(safe-area-inset-top)+12px)] left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-zinc-800/90 backdrop-blur-xl glass-float text-white px-5 py-3 rounded-full text-sm font-medium whitespace-nowrap"
           >
             <div className="w-6 h-6 rounded-full bg-[#D4EAE6] flex items-center justify-center text-zinc-900">
               <Check size={14} strokeWidth={3} />
@@ -302,24 +348,25 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Active Order Trackers, pinned at the top of the Menu page. The Home page renders the same
-          trackers inline instead, so they can never cover its search button. */}
-      <div className={`fixed ${TRACKER_TOP} inset-x-0 z-40 flex flex-col items-center gap-2 px-4 pointer-events-none`}>
-        <AnimatePresence>
-          {currentView === 'client' && clientPage === 'menu' && !selectedItem && myOrders.map(order => (
+      {/* Active order trackers, pinned at the top of every customer tab. Each page pads its header by the
+          same amount (clientTopPadding), so the pills never cover a title or the search button. */}
+      <div className={`fixed ${TRACKER_TOP} inset-x-0 z-40 flex flex-col items-center px-4 pointer-events-none`}>
+        <AnimatePresence initial={false}>
+          {showTrackers && myOrders.map(order => (
+            // No `layout` here: on a fixed element it reads every scroll change between two renders (a tab
+            // change, a restored scroll) as the pill moving, and flies it back in from off screen.
+            // The height animation lets a second pill slide into place when the first comes or goes.
             <motion.div
               key={`track-${order.id}`}
-              layout
-              initial={{ opacity: 0, y: -20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -20, scale: 0.95 }}
-              transition={{
-                type: "spring", stiffness: 400, damping: 30,
-                opacity: { duration: 0.15, ease: "easeOut" }
-              }}
-              className="w-full max-w-sm pointer-events-auto"
+              initial={{ opacity: 0, height: 0, transform: 'scale(0.95)' }}
+              animate={{ opacity: 1, height: 'auto', transform: 'scale(1)' }}
+              exit={{ opacity: 0, height: 0, transform: 'scale(0.95)', transition: EXIT }}
+              transition={ENTER}
+              className="w-full max-w-[340px] pointer-events-auto"
             >
-              <ActiveOrderTracker order={order} onOpen={() => openTrackedOrder(order.id)} />
+              <div className="pb-2">
+                <ActiveOrderTracker order={order} onOpen={() => openTrackedOrder(order.id)} />
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>
@@ -332,80 +379,75 @@ export default function App() {
       <main className="grid grid-cols-[minmax(0,1fr)] [grid-template-areas:'main'] relative min-h-[100svh]">
         <AnimatePresence>
           {currentView === 'client' && (
-            <motion.div
+            <ScreenLayer
               key="client"
               className="[grid-area:main] bg-zinc-900 w-full min-h-[100svh]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={PAGE_TRANSITION}
+              style={{ transformOrigin: clientOrigin }}
+              initial={APP_RECEDED}
+              animate={APP_PRESENT}
+              // Stepping back happens while a sheet rises, coming back while it drops away.
+              exit={{ ...APP_RECEDED, transition: SHEET_ENTER }}
+              transition={SHEET_EXIT}
             >
-              {/* The customer app's four tabs. Both pages are mounted for the length of the swap and
-                  share a single grid cell, so they cross-fade in place instead of stacking. That
-                  overlap is also what makes the scroll restore land: the outgoing page holds the
-                  document height up while the incoming one mounts, so scrolling back to a remembered
-                  offset is not clamped by a momentarily short page. */}
-              <div className="grid grid-cols-[minmax(0,1fr)] [grid-template-areas:'page']">
-                <AnimatePresence initial={false}>
-                  <motion.div
-                    key={clientPage}
-                    className="[grid-area:page] min-w-0"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={PAGE_TRANSITION}
-                  >
-                    <ScrollRestore top={scrollByPage.current.get(clientPage) ?? 0} />
+              {/* The customer app's four tabs: the pages cross-fade while sliding a short way in the
+                  direction the navbar lens moves. PageTransition keeps the outgoing page pinned in place
+                  while the incoming one restores its scroll, so neither of them jumps. */}
+              <AnimatePresence initial={false} custom={pageDirection.current}>
+                <PageTransition key={clientPage} direction={pageDirection.current}>
+                  <ScrollRestore top={scrollByPage.current.get(clientPage) ?? 0} />
 
-                    {clientPage === 'home' && (
-                      <HomeScreen
-                        menuItems={menuItems}
-                        orderType={orderType}
-                        setOrderType={setOrderType}
-                        onSelectItem={setSelectedItem}
-                        onOpenMenu={() => goToClientPage('menu')}
-                        onOpenCategory={openCategory}
-                        onOpenSearch={() => setSearchOpen(true)}
-                        selectedCategory={menuCategory}
-                        myOrders={myOrders}
-                        onOpenOrder={openTrackedOrder}
-                      />
-                    )}
+                  {clientPage === 'home' && (
+                    <HomeScreen
+                      menuItems={menuItems}
+                      orderType={orderType}
+                      setOrderType={setOrderType}
+                      onSelectItem={setSelectedItem}
+                      onOpenMenu={openMenuPage}
+                      onOpenCategory={openCategory}
+                      onOpenSearch={openSearch}
+                      selectedCategory={menuCategory}
+                      trackerCount={myOrders.length}
+                    />
+                  )}
 
-                    {clientPage === 'map' && (
-                      <CustomerMapScreen orderOnTheWay={orderOnTheWay} onOpenOrder={openTrackedOrder} />
-                    )}
+                  {clientPage === 'map' && <CustomerMapScreen trackerCount={myOrders.length} />}
 
-                    {clientPage === 'menu' && (
-                      <MenuScreen
-                        menuItems={menuItems}
-                        orderType={orderType}
-                        setOrderType={setOrderType}
-                        onSelectItem={setSelectedItem}
-                        trackerCount={myOrders.length}
-                        selectedCategory={menuCategory}
-                        scrollToCategory={categoryJump}
-                        onScrolledToCategory={handleScrolledToCategory}
-                      />
-                    )}
+                  {clientPage === 'menu' && (
+                    <MenuScreen
+                      menuItems={menuItems}
+                      orderType={orderType}
+                      setOrderType={setOrderType}
+                      onSelectItem={setSelectedItem}
+                      trackerCount={myOrders.length}
+                      selectedCategory={menuCategory}
+                      scrollToCategory={categoryJump}
+                      onScrolledToCategory={handleScrolledToCategory}
+                    />
+                  )}
 
-                    {clientPage === 'profile' && (
-                      <ProfileScreen myOrders={myOrders} onOpenOrder={openTrackedOrder} onDemoAction={showToast} />
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </motion.div>
+                  {clientPage === 'profile' && (
+                    <ProfileScreen
+                      myOrders={myOrders}
+                      onOpenOrder={openTrackedOrder}
+                      onDemoAction={showToast}
+                      trackerCount={myOrders.length}
+                    />
+                  )}
+                </PageTransition>
+              </AnimatePresence>
+            </ScreenLayer>
           )}
 
+          {/* The cart is a sheet: it rises over the app, which steps back while a blur builds up over it. */}
+          {currentView === 'cart' && <SheetBackdrop key="cart-backdrop" className="z-[29] pointer-events-none" />}
           {currentView === 'cart' && (
-            <motion.div
+            <ScreenLayer
               key="cart"
-              className="[grid-area:main] bg-zinc-900 z-30 w-full min-h-[100svh]"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: "spring", stiffness: 350, damping: 35, mass: 0.8, opacity: { duration: 0.2, ease: "easeOut" } }}
+              className="[grid-area:main] bg-zinc-900 z-30 w-full min-h-[100svh] shadow-[0_-24px_60px_rgba(0,0,0,0.5)]"
+              initial={{ transform: 'translateY(100vh)' }}
+              animate={{ transform: 'translateY(0vh)', transitionEnd: { transform: 'none' } }}
+              exit={{ transform: 'translateY(100vh)', transition: SHEET_EXIT }}
+              transition={SHEET_ENTER}
             >
               <CartScreen
                 cart={cart}
@@ -413,28 +455,34 @@ export default function App() {
                 orderType={orderType}
                 onBack={() => setCurrentView('client')}
                 onPlaceOrder={handlePlaceOrder}
+                menuItems={menuItems}
+                onAddSuggestion={item => handleAddToCart(item, 1, [])}
               />
-            </motion.div>
+            </ScreenLayer>
           )}
 
           {currentView === 'confirmation' && activeOrder && (
-            <motion.div
+            <ScreenLayer
               key="confirmation"
               className="[grid-area:main] bg-zinc-900 z-40 w-full min-h-[100svh]"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30, opacity: { duration: 0.2, ease: "easeOut" } }}
+              // Opacity only: a transform here would make the page's pinned bottom button scroll with it
+              // until the entrance ended. The blocks inside rise in sequence instead.
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: EXIT }}
+              transition={ENTER}
             >
+              {/* The order page always opens at its top, whatever page it was opened from. */}
+              <ScrollRestore top={0} />
               <ConfirmationScreen
                 order={activeOrder}
                 onBackToMenu={handleLeaveConfirmation}
               />
-            </motion.div>
+            </ScreenLayer>
           )}
 
           {currentView === 'admin' && (
-            <motion.div
+            <ScreenLayer
               key="admin"
               className="[grid-area:main] bg-zinc-900 z-50 w-full min-h-[100svh]"
               initial={{ opacity: 0, y: 20 }}
@@ -454,10 +502,10 @@ export default function App() {
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
               ) : staffLogin('admin')}
-            </motion.div>
+            </ScreenLayer>
           )}
           {currentView === 'kitchen' && (
-            <motion.div
+            <ScreenLayer
               key="kitchen"
               className="[grid-area:main] bg-zinc-950 z-50 w-full min-h-[100svh]"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -473,11 +521,11 @@ export default function App() {
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
               ) : staffLogin('kitchen')}
-            </motion.div>
+            </ScreenLayer>
           )}
 
           {currentView === 'courier' && (
-            <motion.div
+            <ScreenLayer
               key="courier"
               className="[grid-area:main] bg-zinc-950 z-50 w-full min-h-[100svh]"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -493,16 +541,19 @@ export default function App() {
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
               ) : staffLogin('courier')}
-            </motion.div>
+            </ScreenLayer>
           )}
         </AnimatePresence>
       </main>
 
-      {/* The customer app's own navigation. Hidden behind the cart, checkout, tracking and staff
-          screens, and while a product modal is open, so it is never part of those flows. */}
-      {currentView === 'client' && !selectedItem && !searchOpen && (
-        <MobileBottomNav page={clientPage} cartCount={cartItemsCount} onNavigate={goToClientTab} />
-      )}
+      {/* The customer app's own navigation. It slides away behind the cart, checkout, tracking and
+          staff screens. A product sheet or the search simply covers it: taking it out there made it
+          rise back in, see-through, every time a sheet closed. */}
+      <AnimatePresence>
+        {currentView === 'client' && (
+          <MobileBottomNav key="nav" page={clientPage} cartCount={cartItemsCount} onNavigate={goToClientTab} />
+        )}
+      </AnimatePresence>
 
       {/* Search sits above the navbar but below the product modal, so a hit can open the modal
           without losing the results underneath. */}

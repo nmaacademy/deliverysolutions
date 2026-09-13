@@ -4,6 +4,8 @@ import { motion } from 'motion/react';
 import { MenuItem } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
 import { FadeInImage } from '../../components/ui/FadeInImage';
+import { SheetBackdrop } from '../../components/ui/SheetBackdrop';
+import { ENTER, EXIT, revealOnMount, riseItem, staggerGroup } from '../../lib/motion';
 
 interface Props {
   menuItems: MenuItem[];
@@ -65,18 +67,27 @@ export default function HomeSearch({ menuItems, onSelectItem, onClose }: Props) 
   }, [menuItems, query]);
 
   return (
+    <>
+    {/* The page behind blurs and darkens gradually while the search comes over it. */}
+    <SheetBackdrop className="z-[44]" blur={20} tint={0.78} enter={ENTER} exit={EXIT} />
     <motion.div
       role="dialog"
       aria-modal="true"
       aria-label="Caută preparate"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="fixed inset-0 z-[45] flex flex-col bg-zinc-900/95 backdrop-blur-2xl"
+      exit={{ opacity: 0, transition: EXIT }}
+      transition={ENTER}
+      className="fixed inset-0 z-[45] flex flex-col"
     >
       {/* Search bar */}
-      <div className="shrink-0 px-4 sm:px-6 pt-[calc(env(safe-area-inset-top)+16px)] pb-4 border-b border-white/[0.06]">
+      <motion.div
+        initial={{ opacity: 0, transform: 'translateY(-16px)' }}
+        animate={{ opacity: 1, transform: 'translateY(0px)' }}
+        exit={{ opacity: 0, transform: 'translateY(-8px)', transition: EXIT }}
+        transition={ENTER}
+        className="shrink-0 px-4 sm:px-6 pt-[calc(env(safe-area-inset-top)+16px)] pb-4 border-b border-white/[0.06]"
+      >
         <div className="max-w-3xl mx-auto flex items-center gap-2">
           <button
             type="button"
@@ -113,7 +124,7 @@ export default function HomeSearch({ menuItems, onSelectItem, onClose }: Props) 
             )}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Results */}
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 sm:px-6 py-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
@@ -135,21 +146,21 @@ export default function HomeSearch({ menuItems, onSelectItem, onClose }: Props) 
               </p>
             </div>
           ) : (
-            <ul className="flex flex-col gap-2 sm:grid sm:grid-cols-2 sm:gap-3">
+            <motion.ul variants={staggerGroup(0.025, 0.04)} {...revealOnMount} className="flex flex-col gap-2 sm:grid sm:grid-cols-2 sm:gap-3">
               {results.map(item => (
-                <li key={item.id}>
+                <motion.li key={item.id} variants={riseItem}>
                   <button
                     type="button"
                     onClick={() => {
                       triggerVibration(10);
                       onSelectItem(item);
                     }}
-                    className="group w-full flex items-center gap-3 p-2.5 text-left rounded-[24px] bg-white/[0.05] border-[0.5px] border-white/15 hover:bg-white/[0.1] hover:border-white/25 transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
+                    className="group w-full flex items-center gap-3 p-2 text-left rounded-card bg-white/[0.05] glass-edge hover:bg-white/[0.1] transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
                   >
                     <FadeInImage
                       src={item.image}
                       alt={item.name}
-                      className="w-14 h-14 shrink-0 rounded-[18px] bg-zinc-800"
+                      className="w-14 h-14 shrink-0 rounded-tile bg-zinc-800"
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block text-[15px] font-semibold text-white truncate group-hover:text-[#D4EAE6] transition-colors">
@@ -161,12 +172,13 @@ export default function HomeSearch({ menuItems, onSelectItem, onClose }: Props) 
                       {item.price} RON
                     </span>
                   </button>
-                </li>
+                </motion.li>
               ))}
-            </ul>
+            </motion.ul>
           )}
         </div>
       </div>
     </motion.div>
+    </>
   );
 }

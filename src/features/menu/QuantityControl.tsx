@@ -1,5 +1,6 @@
 import { Minus, Plus } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
+import { SPRING_SNAPPY } from '../../lib/motion';
 
 interface Props {
   quantity: number;
@@ -24,14 +25,14 @@ export default function QuantityControl({ quantity, min = 1, max, onChange, disa
   const button = 'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] disabled:opacity-30 disabled:cursor-not-allowed';
 
   return (
-    <div className="flex items-center bg-white/[0.06] backdrop-blur-2xl border-[0.5px] border-white/15 rounded-full px-1 shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]">
+    <div className="flex items-center bg-white/[0.06] glass-edge rounded-full px-1">
       <motion.button
         type="button"
         aria-label="Scade cantitatea"
         disabled={!canDecrease}
         onClick={() => step(-1)}
-        whileTap={reduceMotion || !canDecrease ? undefined : { scale: 0.85 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+        whileTap={reduceMotion || !canDecrease ? undefined : { scale: 0.9 }}
+        transition={SPRING_SNAPPY}
         className={`${button} text-zinc-300 hover:text-white`}
       >
         <Minus size={16} strokeWidth={2.5} />
@@ -46,8 +47,8 @@ export default function QuantityControl({ quantity, min = 1, max, onChange, disa
         aria-label="Crește cantitatea"
         disabled={!canIncrease}
         onClick={() => step(1)}
-        whileTap={reduceMotion || !canIncrease ? undefined : { scale: 0.85 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+        whileTap={reduceMotion || !canIncrease ? undefined : { scale: 0.9 }}
+        transition={SPRING_SNAPPY}
         className={`${button} text-zinc-300 hover:text-white`}
       >
         <Plus size={16} strokeWidth={2.5} />

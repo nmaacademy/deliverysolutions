@@ -1,12 +1,25 @@
 <!doctype html>
-<html lang="ro" class="bg-zinc-900">
+<html lang="ro" translate="no" class="bg-zinc-900 notranslate">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <!-- The interface is intentionally Romanian; do not offer translation again after each SPA route. -->
+    <meta name="google" content="notranslate" />
+    <meta http-equiv="Content-Language" content="ro" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />
+    <!-- Painted before any CSS or script loads, so the page edges and the overscroll area are never white. -->
+    <style>html,body{background:#18181b}</style>
+    <!-- Installable as an app: opened from the home screen it runs full screen, without the browser bars. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Restaurant" />
     <title>Restaurant Demo</title>
-    <meta name="description" content="Premium food ordering demo." />
+    <meta name="description" content="Demonstrație premium pentru comenzi la restaurant." />
     <meta property="og:title" content="Restaurant Demo" />
-    <meta property="og:description" content="Premium food ordering demo." />
+    <meta property="og:description" content="Demonstrație premium pentru comenzi la restaurant." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com">

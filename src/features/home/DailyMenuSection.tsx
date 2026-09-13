@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Clock, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
+import { revealOnView, riseItem, staggerGroup } from '../../lib/motion';
 import { MenuItem } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
 import { FadeInImage } from '../../components/ui/FadeInImage';
@@ -30,22 +31,19 @@ export default function DailyMenuSection({ menuItems, onSelectItem, onSeeAll }: 
       <SectionHeader id="home-daily" title="Meniul zilei" hint="Disponibil astăzi" onSeeAll={onSeeAll} />
 
       <div className="-mx-4 sm:-mx-6 px-4 sm:px-6 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-4 sm:scroll-px-6 lg:overflow-visible lg:mx-0 lg:px-0">
-        <ul className="flex gap-3 w-max py-1 lg:grid lg:grid-cols-4 lg:w-auto lg:gap-4">
-          {items.map((item, index) => {
+        <motion.ul variants={staggerGroup(0.03, 0)} {...revealOnView} className="flex gap-3 w-max py-1 lg:grid lg:grid-cols-4 lg:w-auto lg:gap-4">
+          {items.map(item => {
             const { prepMinutes } = showcaseMeta(item);
             return (
-              <li key={item.id} className="snap-start lg:snap-align-none">
+              <motion.li key={item.id} variants={riseItem} className="snap-start lg:snap-align-none">
                 <motion.button
                   type="button"
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.25, delay: index * 0.05, ease: 'easeOut' }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     triggerVibration(10);
                     onSelectItem(item);
                   }}
-                  className="group w-[190px] sm:w-[220px] lg:w-full h-full flex flex-col p-4 rounded-[30px] text-left bg-white/[0.06] backdrop-blur-2xl border-[0.5px] border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.35)] hover:bg-white/[0.1] hover:border-white/25 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                  className="group w-[190px] sm:w-[220px] lg:w-full h-full flex flex-col p-4 rounded-card text-left bg-white/[0.05] glass-edge hover:bg-white/[0.09] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
                 >
                   <span className="relative block self-center">
                     <FadeInImage
@@ -53,13 +51,15 @@ export default function DailyMenuSection({ menuItems, onSelectItem, onSeeAll }: 
                       alt={item.name}
                       className="w-[132px] h-[132px] rounded-full bg-zinc-800 ring-1 ring-white/10"
                     />
-                    <span className="absolute -top-1 left-0 text-[9px] font-bold uppercase tracking-wider text-zinc-900 bg-[#D4EAE6] px-2.5 py-1 rounded-full shadow-[0_4px_14px_rgba(212,234,230,0.3)]">
+                    <span className="absolute -top-1 left-0 text-[9px] font-bold uppercase tracking-wider text-zinc-900 bg-[#D4EAE6] px-2.5 py-1 rounded-full glow-opal">
                       Astăzi
                     </span>
-                    {/* Affordance only: the whole card opens the product modal. */}
+                    {/* Affordance only: the whole card opens the product modal. Solid rather than frosted: on
+                        the phone a backdrop blur inside a card that is still fading in showed under the
+                        photo, then jumped on top when the entrance ended. */}
                     <span
                       aria-hidden
-                      className="absolute bottom-0 right-0 w-8 h-8 grid place-items-center rounded-full bg-[#D4EAE6]/15 backdrop-blur-md ring-1 ring-white/15 text-[#D4EAE6] group-hover:bg-[#D4EAE6] group-hover:text-zinc-900 transition-colors"
+                      className="absolute bottom-0 right-0 w-8 h-8 grid place-items-center z-10 rounded-full bg-zinc-900/80 ring-1 ring-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.35)] text-[#D4EAE6] group-hover:bg-[#D4EAE6] group-hover:text-zinc-900 transition-colors"
                     >
                       <Plus size={16} strokeWidth={2.5} />
                     </span>
@@ -82,10 +82,10 @@ export default function DailyMenuSection({ menuItems, onSelectItem, onSeeAll }: 
                     </span>
                   </span>
                 </motion.button>
-              </li>
+              </motion.li>
             );
           })}
-        </ul>
+        </motion.ul>
       </div>
     </section>
   );

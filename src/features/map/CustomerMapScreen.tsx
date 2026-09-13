@@ -1,15 +1,14 @@
-import { useRef, useState } from 'react';
-import { Clock, Info, Loader2, LocateFixed, Store } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Order } from '../../types';
+import { revealOnMount, riseItem, staggerGroup } from '../../lib/motion';
+import { memo, useRef, useState } from 'react';
+import { Clock, Info, Loader2, LocateFixed } from 'lucide-react';
+import SoupPotIcon from '../../components/ui/SoupPotIcon';
 import { leafletDocument, RESTAURANT_LOCATION } from '../../components/map/leafletDocument';
-import ActiveOrderTracker from '../checkout/ActiveOrderTracker';
 import { CLIENT_PAGE_BOTTOM, clientTopPadding } from '../client/layout';
 
 interface Props {
-  /** Shown as a compact card over the map while a delivery is on its way. */
-  orderOnTheWay: Order | null;
-  onOpenOrder: (orderId: string) => void;
+  /** Order trackers pinned above the page; the header starts below them. */
+  trackerCount?: number;
 }
 
 // Reuses the shared Leaflet document (createMap, createIcon, the dark basemap) rather than setting up
@@ -50,7 +49,7 @@ const DEMO_HOURS = [
 
 type LocateState = 'idle' | 'locating' | 'denied';
 
-export default function CustomerMapScreen({ orderOnTheWay, onOpenOrder }: Props) {
+function CustomerMapScreen({ trackerCount = 0 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [locate, setLocate] = useState<LocateState>('idle');
 
@@ -74,24 +73,12 @@ export default function CustomerMapScreen({ orderOnTheWay, onOpenOrder }: Props)
   };
 
   return (
-    <div className={CLIENT_PAGE_BOTTOM} style={{ paddingTop: clientTopPadding() }}>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6">
-        <h1 className="text-[28px] sm:text-[32px] font-sans font-semibold tracking-tight text-white mb-1">Hartă</h1>
-        <p className="text-[13px] text-zinc-400 mb-5">Unde ne găsești și unde ajunge comanda ta.</p>
+    <div className={CLIENT_PAGE_BOTTOM} style={{ paddingTop: clientTopPadding(trackerCount) }}>
+      <motion.div variants={staggerGroup(0.035, 0)} {...revealOnMount} className="max-w-3xl mx-auto px-4 sm:px-6">
+        <motion.h1 variants={riseItem} className="text-[28px] sm:text-[32px] font-sans font-semibold tracking-tight text-white mb-1">Hartă</motion.h1>
+        <motion.p variants={riseItem} className="text-[13px] text-zinc-400 mb-5">Unde ne găsești și unde ajunge comanda ta.</motion.p>
 
-        {/* Only while a courier is actually on the road: tapping it opens the full tracking page. */}
-        {orderOnTheWay && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="mb-4"
-          >
-            <ActiveOrderTracker order={orderOnTheWay} onOpen={() => onOpenOrder(orderOnTheWay.id)} />
-          </motion.div>
-        )}
-
-        <div className="relative isolate h-[52svh] min-h-[320px] rounded-[32px] overflow-hidden bg-[#121214] border border-white/10 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+        <motion.div variants={riseItem} className="relative isolate h-[52svh] min-h-[320px] rounded-card overflow-hidden bg-[#121214] border border-white/10 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
           <iframe
             ref={iframeRef}
             srcDoc={CUSTOMER_MAP_HTML}
@@ -106,18 +93,18 @@ export default function CustomerMapScreen({ orderOnTheWay, onOpenOrder }: Props)
               onClick={() => post({ type: 'showRestaurant' })}
               aria-label="Centrează pe restaurant"
               title="Centrează pe restaurant"
-              className="w-11 h-11 grid place-items-center rounded-full bg-zinc-800/90 backdrop-blur-md border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.5)] text-orange-400 hover:bg-zinc-700/90 active:scale-95 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
+              className="w-11 h-11 grid place-items-center rounded-full bg-zinc-800/90 backdrop-blur-md border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.5)] text-[#D4EAE6] hover:bg-zinc-700/90 active:scale-95 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
             >
-              <Store size={19} />
+              <SoupPotIcon size={20} />
             </button>
           </div>
-        </div>
+        </motion.div>
 
         {/* Restaurant card */}
-        <section className="mt-4 rounded-[32px] bg-white/[0.06] backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.35)] p-5">
+        <motion.section variants={riseItem} className="mt-4 rounded-card bg-white/[0.05] glass-edge p-5">
           <div className="flex items-start gap-3">
-            <span className="w-11 h-11 shrink-0 grid place-items-center rounded-full bg-orange-400/10 text-orange-400">
-              <Store size={20} />
+            <span className="w-11 h-11 shrink-0 grid place-items-center rounded-full bg-[#D4EAE6]/10 text-[#D4EAE6]">
+              <SoupPotIcon size={22} />
             </span>
             <div className="min-w-0 flex-1">
               <h2 className="text-[18px] font-semibold tracking-tight text-white">Restaurant Demo</h2>
@@ -155,15 +142,19 @@ export default function CustomerMapScreen({ orderOnTheWay, onOpenOrder }: Props)
               Nu am putut afla locația. Verifică permisiunile browserului.
             </p>
           )}
-        </section>
+        </motion.section>
 
-        <p className="mt-4 flex items-start gap-2 text-[12px] text-zinc-500 leading-relaxed px-1">
+        <motion.p variants={riseItem} className="mt-4 flex items-start gap-2 text-[12px] text-zinc-500 leading-relaxed px-1">
           <Info size={14} className="shrink-0 mt-0.5" />
           Hartă demonstrativă. Locația restaurantului ({RESTAURANT_LOCATION.lat.toFixed(4)},{' '}
           {RESTAURANT_LOCATION.lng.toFixed(4)}) și programul sunt date de test, iar poziția curierului nu este urmărită
           în timp real.
-        </p>
-      </div>
+        </motion.p>
+      </motion.div>
     </div>
   );
 }
+
+// Memoised: opening a product sheet, the search or the 5-second order poll re-renders App, and
+// rebuilding every card of the page in that same frame held back the first frame of the sheet.
+export default memo(CustomerMapScreen);

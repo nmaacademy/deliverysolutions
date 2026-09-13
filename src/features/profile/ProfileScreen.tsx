@@ -17,6 +17,7 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { revealOnMount, riseItem, staggerGroup } from '../../lib/motion';
 import { Order } from '../../types';
 import { formatTime, shortOrderId } from '../../lib/format';
 import { triggerVibration } from '../../lib/haptics';
@@ -31,6 +32,8 @@ interface Props {
   onOpenOrder: (orderId: string) => void;
   /** Demo actions have nothing to save, so they just raise a toast. */
   onDemoAction: (message: string) => void;
+  /** Order trackers pinned above the page; the header starts below them. */
+  trackerCount?: number;
 }
 
 /** The three staff screens, each opened in its own tab from here. */
@@ -61,18 +64,18 @@ const NOTIFICATION_TOGGLES = [
 
 function Section({ icon: Icon, title, action, children }: { icon: LucideIcon; title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-[32px] bg-white/[0.06] backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.35)] p-5">
+    <motion.section variants={riseItem} className="rounded-card bg-white/[0.05] glass-edge p-5">
       <div className="flex items-center gap-2 mb-4">
         <Icon size={16} className="text-[#D4EAE6] shrink-0" />
         <h2 className="text-[14px] font-semibold tracking-tight text-white flex-1">{title}</h2>
         {action}
       </div>
       {children}
-    </section>
+    </motion.section>
   );
 }
 
-const ROW = 'w-full flex items-center gap-3 min-h-[56px] px-3 -mx-1 rounded-[20px] text-left hover:bg-white/[0.05] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]';
+const ROW = 'w-full flex items-center gap-3 min-h-[56px] px-3 -mx-1 rounded-tile text-left hover:bg-white/[0.05] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]';
 
 /** Visual-only switch: the state lives in this component and is never persisted. */
 function Toggle({ label, detail, on, onToggle }: { label: string; detail: string; on: boolean; onToggle: () => void }) {
@@ -107,18 +110,19 @@ function Toggle({ label, detail, on, onToggle }: { label: string; detail: string
   );
 }
 
-export default function ProfileScreen({ myOrders, onOpenOrder, onDemoAction }: Props) {
+export default function ProfileScreen({ myOrders, onOpenOrder, onDemoAction, trackerCount = 0 }: Props) {
   const [toggles, setToggles] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(NOTIFICATION_TOGGLES.map(item => [item.id, item.initial])),
   );
 
   return (
-    <div className={CLIENT_PAGE_BOTTOM} style={{ paddingTop: clientTopPadding() }}>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 flex flex-col gap-4">
-        <h1 className="text-[28px] sm:text-[32px] font-sans font-semibold tracking-tight text-white">Profil</h1>
+    <div className={CLIENT_PAGE_BOTTOM} style={{ paddingTop: clientTopPadding(trackerCount) }}>
+      {/* Every block of the page arrives in sequence, top to bottom. */}
+      <motion.div variants={staggerGroup(0.035, 0)} {...revealOnMount} className="max-w-3xl mx-auto px-4 sm:px-6 flex flex-col gap-4">
+        <motion.h1 variants={riseItem} className="text-[28px] sm:text-[32px] font-sans font-semibold tracking-tight text-white">Profil</motion.h1>
 
         {/* Identity card */}
-        <section className="rounded-[32px] bg-white/[0.06] backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.35)] p-5 flex items-center gap-4">
+        <motion.section variants={riseItem} className="rounded-card bg-white/[0.05] glass-edge p-5 flex items-center gap-4">
           <span
             aria-hidden
             className="w-16 h-16 shrink-0 grid place-items-center rounded-full bg-[#D4EAE6]/15 text-[#D4EAE6] border border-[#D4EAE6]/20"
@@ -141,9 +145,10 @@ export default function ProfileScreen({ myOrders, onOpenOrder, onDemoAction }: P
           >
             <Pencil size={17} />
           </button>
-        </section>
+        </motion.section>
 
-        <button
+        <motion.button
+          variants={riseItem}
           type="button"
           onClick={() => onDemoAction('Editarea profilului nu este disponibilă în demo')}
           className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-full bg-white/[0.08] border border-white/10 text-[14px] font-medium text-zinc-100 hover:bg-white/[0.12] transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
@@ -151,7 +156,7 @@ export default function ProfileScreen({ myOrders, onOpenOrder, onDemoAction }: P
           <Pencil size={16} />
           Editează profilul
           <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">demo</span>
-        </button>
+        </motion.button>
 
         {/* The three staff screens used to live in a bar pinned over the customer screens. They are
             plain buttons here instead, so the demo tools stay out of the customer's way. */}
@@ -241,7 +246,7 @@ export default function ProfileScreen({ myOrders, onOpenOrder, onDemoAction }: P
           action={<span className="text-[12px] text-zinc-500 tabular-nums">{myOrders.length}</span>}
         >
           {myOrders.length === 0 ? (
-            <p className="rounded-[20px] border border-dashed border-white/10 px-5 py-8 text-center text-[13px] text-zinc-500">
+            <p className="rounded-tile border border-dashed border-white/10 px-5 py-8 text-center text-[13px] text-zinc-500">
               Nu ai nicio comandă activă. Comenzile plasate din acest browser apar aici.
             </p>
           ) : (
@@ -281,11 +286,11 @@ export default function ProfileScreen({ myOrders, onOpenOrder, onDemoAction }: P
           </ul>
         </Section>
 
-        <p className="flex items-start gap-2 text-[12px] text-zinc-500 leading-relaxed px-1">
+        <motion.p variants={riseItem} className="flex items-start gap-2 text-[12px] text-zinc-500 leading-relaxed px-1">
           <Info size={14} className="shrink-0 mt-0.5" />
           Prototip vizual: nu există autentificare, iar datele de profil de mai sus sunt fictive și nu sunt salvate.
-        </p>
-      </div>
+        </motion.p>
+      </motion.div>
     </div>
   );
 }

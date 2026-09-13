@@ -1,11 +1,73 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, Plus, Minus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CartItem, OrderType, Order } from '../../types';
+import { CartItem, MenuItem, OrderType, Order } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
 import { DELIVERY_FEE, cartSubtotal, lineTotal } from '../../lib/pricing';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { AutoHeight } from '../../components/ui/AutoHeight';
 import { LocationMap } from '../../components/map/LocationMap';
+import UpsellTile from '../menu/UpsellTile';
+import { FadeInImage } from '../../components/ui/FadeInImage';
+import { EASE_IN_OUT, EASE_OUT, ENTER, EXIT, SPRING_SNAPPY, SWAP, revealOnMount, revealOnView, riseItem, slideItem, staggerGroup } from '../../lib/motion';
+
+/** A number that rolls up or down to its new value instead of jumping. */
+function RollingNumber({ value, suffix = '', className = '' }: { value: number; suffix?: string; className?: string }) {
+  const previous = useRef(value);
+  const direction = value >= previous.current ? 1 : -1;
+  useEffect(() => {
+    previous.current = value;
+  }, [value]);
+
+  return (
+    <span className={`relative inline-flex overflow-hidden h-[1.3em] ${className}`}>
+      <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+        <motion.span
+          key={value}
+          custom={direction}
+          variants={{
+            enter: (d: number) => ({ y: `${d * 100}%`, opacity: 0 }),
+            center: { y: '0%', opacity: 1 },
+            exit: (d: number) => ({ y: `${d * -100}%`, opacity: 0 }),
+          }}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={SWAP}
+          className="block leading-[1.3em] whitespace-nowrap"
+        >
+          {value}
+          {suffix}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/** Slim quantity stepper for the cart rows: smaller than the photo it sits next to, with a 44px hit area. */
+function CartStepper({ quantity, onChange }: { quantity: number; onChange: (delta: number) => void }) {
+  const button =
+    'relative w-8 h-8 grid place-items-center rounded-full text-zinc-300 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30 after:absolute after:-inset-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]';
+  return (
+    <div role="group" aria-label="Cantitate" className="flex items-center gap-0.5 h-9 px-0.5 rounded-full bg-white/[0.06] border-[0.5px] border-white/10">
+      <motion.button type="button" whileTap={{ scale: 0.9 }} transition={SPRING_SNAPPY} disabled={quantity <= 1} onClick={() => onChange(-1)} aria-label="Scade cantitatea" className={button}>
+        <Minus size={14} />
+      </motion.button>
+      <RollingNumber value={quantity} className="w-5 justify-center text-[13px] font-semibold text-zinc-100 tabular-nums" />
+      <motion.button type="button" whileTap={{ scale: 0.9 }} transition={SPRING_SNAPPY} onClick={() => onChange(1)} aria-label="Crește cantitatea" className={button}>
+        <Plus size={14} />
+      </motion.button>
+    </div>
+  );
+}
+
+/** Checkout steps slide a short way sideways while cross-fading, on one curve so both land together. */
+const STEP_MOTION = {
+  initial: { opacity: 0, transform: 'translateX(16px)' },
+  animate: { opacity: 1, transform: 'translateX(0px)', transitionEnd: { transform: 'none' } },
+  exit: { opacity: 0, transform: 'translateX(-16px)', transition: EXIT },
+  transition: { duration: 0.24, ease: EASE_OUT },
+} as const;
 
 const PillInput = ({ label, id, className = '', ...props }: any) => (
   <div className={`w-full flex flex-col gap-2 ${className}`}>
@@ -26,21 +88,17 @@ interface Props {
   orderType: OrderType;
   onBack: () => void;
   onPlaceOrder: (orderData: Partial<Order>) => void;
+  /** The live menu, for the "Ți-ar plăcea și astea" suggestions. */
+  menuItems: MenuItem[];
+  /** Adds one of a suggested dish straight to the cart. */
+  onAddSuggestion: (item: MenuItem) => void;
 }
 
-export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOrder }: Props) {
+export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOrder, menuItems, onAddSuggestion }: Props) {
+  // The cart opens at its top. The app underneath stays pinned where it was while the sheet covers it,
+  // and gets its own scroll back when the cart closes.
   useEffect(() => {
-    // 1. Resetam instant scroll-ul la 0 ca sa evitam acel gol alb ramas de la pagina anterioara
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-
-    // 2. Dupa ce animatia de intrare se incheie, scrollam lin catre sectiunea Comanda Ta
-    setTimeout(() => {
-      const el = document.getElementById('comanda-ta');
-      if (el) {
-        const y = el.getBoundingClientRect().top + window.scrollY - 80; // 80px pentru meniul sticky
-        window.scrollTo({ top: y, behavior: 'smooth' });
-      }
-    }, 400); // 400ms lasa timp animatiei sa se termine
   }, []);
 
   const [checkoutStep, setCheckoutStep] = useState(1);
@@ -54,6 +112,16 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
   const subtotal = cartSubtotal(cart);
   const deliveryFee = orderType === 'livrare' ? DELIVERY_FEE : 0;
   const total = subtotal + deliveryFee;
+
+  // "Ți-ar plăcea și astea": desserts and drinks first, and never something already in the cart.
+  const suggestions = useMemo(() => {
+    const inCart = new Set(cart.map(item => item.menuItem.id));
+    const sidesFirst = (item: MenuItem) => (/^(desert|b[aă]uturi)/i.test(item.category) ? 0 : 1);
+    return menuItems
+      .filter(item => item.available && item.stock > 0 && !inCart.has(item.id))
+      .sort((a, b) => sidesFirst(a) - sidesFirst(b))
+      .slice(0, 8);
+  }, [cart, menuItems]);
 
   const updateQuantity = (id: string, delta: number) => {
     triggerVibration(15);
@@ -89,13 +157,13 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
 
   if (cart.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8 min-h-screen flex flex-col">
-        <button onClick={onBack} className="flex items-center justify-center min-h-[44px] min-w-[44px] text-zinc-400 hover:text-zinc-800 transition self-start mb-12">
+      <div className="max-w-2xl mx-auto px-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-8 min-h-[100svh] flex flex-col">
+        <button onClick={onBack} className="flex items-center justify-center min-h-[44px] min-w-[44px] text-zinc-400 hover:text-white transition self-start mb-12">
           <ChevronLeft size={20} className="mr-1" />
           Înapoi la meniu
         </button>
         <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <h2 className="text-3xl font-sans font-semibold tracking-tight text-zinc-800 mb-4">Coșul este gol</h2>
+          <h2 className="text-3xl font-sans font-semibold tracking-tight text-white mb-4">Coșul este gol</h2>
           <p className="text-zinc-400 mb-8">Nu ai adăugat niciun produs în coș încă.</p>
           <button onClick={onBack} className="bg-zinc-800 text-white px-8 min-h-[44px] rounded-full font-medium hover:bg-zinc-700 transition">
             Explorează meniul
@@ -109,7 +177,7 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
     <div className="max-w-5xl mx-auto py-4 sm:py-8 pb-40 sm:pb-32 min-h-[100svh]">
       
       {/* iOS Style Sticky Top Bar */}
-      <div className="sticky top-0 z-40 bg-zinc-900/80 backdrop-blur-2xl border-b border-zinc-700/50 px-4 sm:px-6 py-4 flex items-center justify-between mb-6 sm:mb-8">
+      <div className="sticky top-0 z-40 bg-zinc-900/80 backdrop-blur-2xl border-b border-white/[0.06] px-4 sm:px-6 pt-[calc(env(safe-area-inset-top)+16px)] pb-4 flex items-center justify-between mb-6 sm:mb-8">
         <button onClick={onBack} className="flex items-center justify-center min-h-[44px] text-[#D4EAE6] hover:text-white transition active:scale-95 font-medium -ml-2 px-2">
           <ChevronLeft size={22} className="mr-0.5" />
           <span>Înapoi</span>
@@ -123,76 +191,130 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
         <div className="lg:col-span-7">
           <h2 id="comanda-ta" className="text-2xl sm:text-3xl font-sans font-semibold tracking-tight text-white mb-6">Comanda ta</h2>
           
-          <div className="bg-zinc-800/60 backdrop-blur-2xl border-[0.5px] border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.3)] rounded-[28px] overflow-hidden">
-            <ul className="divide-y divide-zinc-700/60">
-              {cart.map(item => (
-                <li key={item.id} className="p-4 sm:p-6 flex gap-4 sm:gap-5 items-center group bg-transparent transition-colors hover:bg-zinc-700/30">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-[24px] overflow-hidden bg-zinc-800 border border-zinc-700/80 shadow-inner">
-                    <img src={item.menuItem.image} alt={item.menuItem.name} className="w-full h-full object-cover" />
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-sans font-semibold tracking-tight text-base sm:text-lg text-white truncate pr-4">{item.menuItem.name}</h4>
-                      <span className="font-medium text-[#D4EAE6] whitespace-nowrap">{lineTotal(item)} RON</span>
-                    </div>
-                    
-                    {item.selectedExtras.length > 0 ? (
-                      <p className="text-xs text-zinc-400 truncate mb-3">
-                        {item.selectedExtras.map(e => e.name).join(', ')}
-                      </p>
-                    ) : (
-                      <div className="h-2"></div>
-                    )}
-                    
-                    <div className="flex items-center justify-between mt-auto">
-                      <div className="flex items-center gap-1 bg-zinc-800/40 backdrop-blur-xl border border-white/10 rounded-full px-1 shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
-                        <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.8 }} transition={{ type: "spring", stiffness: 400, damping: 17 }} onClick={() => updateQuantity(item.id, -1)} className="text-zinc-300 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"><Minus size={14}/></motion.button>
-                        <span className="w-4 text-center font-medium text-xs text-zinc-100">{item.quantity}</span>
-                        <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.8 }} transition={{ type: "spring", stiffness: 400, damping: 17 }} onClick={() => updateQuantity(item.id, 1)} className="text-zinc-300 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"><Plus size={14}/></motion.button>
+          {/* Same radius as the checkout card beside it. Rows arrive one by one once the sheet is up, and
+              slide away and collapse when removed. */}
+          <div className="bg-zinc-800/60 glass-edge rounded-sheet overflow-hidden">
+            <motion.ul variants={staggerGroup(0.045, 0.1)} {...revealOnMount} className="divide-y divide-zinc-700/60">
+              <AnimatePresence>
+                {cart.map(item => (
+                  <motion.li
+                    key={item.id}
+                    variants={riseItem}
+                    exit={{ opacity: 0, transform: 'translateX(-32px)', height: 0, transition: { duration: 0.26, ease: EASE_OUT, opacity: { duration: 0.16, ease: EASE_OUT } } }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 sm:p-5 flex gap-4 items-stretch">
+                      <FadeInImage src={item.menuItem.image} alt={item.menuItem.name} className="w-24 h-24 sm:w-28 sm:h-28 shrink-0 rounded-tile bg-zinc-800" />
+
+                      <div className="flex-1 min-w-0 flex flex-col">
+                        <div className="flex items-start gap-2">
+                          <h4 className="flex-1 min-w-0 font-sans font-semibold tracking-tight text-[16px] sm:text-lg leading-snug text-white line-clamp-2">{item.menuItem.name}</h4>
+                          <motion.button
+                            type="button"
+                            whileTap={{ scale: 0.9, rotate: -8 }}
+                            transition={SPRING_SNAPPY}
+                            onClick={() => removeItem(item.id)}
+                            aria-label={`Elimină ${item.menuItem.name}`}
+                            className="relative -mt-1 -mr-1 w-8 h-8 shrink-0 grid place-items-center rounded-full text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors after:absolute after:-inset-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
+                          >
+                            <Trash2 size={16} />
+                          </motion.button>
+                        </div>
+
+                        {item.selectedExtras.length > 0 && (
+                          <p className="text-xs text-zinc-400 truncate mt-0.5">{item.selectedExtras.map(e => e.name).join(', ')}</p>
+                        )}
+
+                        <div className="mt-auto pt-2 flex items-center justify-between gap-3">
+                          <CartStepper quantity={item.quantity} onChange={delta => updateQuantity(item.id, delta)} />
+                          <RollingNumber value={lineTotal(item)} suffix=" RON" className="text-[15px] font-semibold text-[#D4EAE6] tabular-nums" />
+                        </div>
                       </div>
-                      <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.8 }} transition={{ type: "spring", stiffness: 400, damping: 17 }} onClick={() => removeItem(item.id)} className="text-zinc-500 hover:text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center -mr-2">
-                        <Trash2 size={18} />
-                      </motion.button>
                     </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </motion.ul>
           </div>
+
+          {suggestions.length > 0 && (
+            <section aria-labelledby="cart-upsell" className="mt-8">
+              <h3 id="cart-upsell" className="text-[17px] font-semibold tracking-tight text-white">
+                Ți-ar plăcea și astea
+              </h3>
+              <p className="mt-0.5 text-[12px] text-zinc-500">Se adaugă direct în coș</p>
+
+              <motion.div variants={staggerGroup(0.045, 0.04)} {...revealOnView} className="mt-3 -mx-4 sm:-mx-6 lg:mx-0 px-4 sm:px-6 lg:px-0 py-1 flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-4 sm:scroll-px-6 lg:scroll-px-0 lg:[mask-image:linear-gradient(to_right,black_82%,transparent)]">
+                {suggestions.map(item => (
+                  <motion.div key={item.id} variants={slideItem} className="shrink-0 snap-start">
+                  <UpsellTile
+                    image={item.image}
+                    name={item.name}
+                    priceLabel={`${item.price} RON`}
+                    label={`Adaugă ${item.name} în coș, ${item.price} RON`}
+                    onPress={() => {
+                      triggerVibration([10, 30, 10]);
+                      onAddSuggestion(item);
+                    }}
+                  />
+                  </motion.div>
+                ))}
+              </motion.div>
+            </section>
+          )}
         </div>
 
         {/* Checkout Form */}
         <div className="lg:col-span-5">
-          <div className="bg-zinc-800/60 backdrop-blur-2xl border-[0.5px] border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.3)] rounded-[40px] p-6 sm:p-8 lg:sticky lg:top-8 flex flex-col min-h-[500px]">
+          <motion.div
+            initial={{ opacity: 0, transform: 'translateY(20px)' }}
+            animate={{ opacity: 1, transform: 'translateY(0px)', transitionEnd: { transform: 'none' } }}
+            transition={{ ...ENTER, delay: 0.1 }}
+            className="bg-zinc-800/60 glass-edge rounded-sheet p-6 sm:p-8 lg:sticky lg:top-24"
+          >
             
             {/* Progress Bar */}
             <div className="flex items-center gap-2 mb-6 sm:mb-8">
               {[1, 2, 3].map(step => (
-                <div key={step} className={`flex-1 h-1.5 rounded-full transition-colors duration-500 ${step <= checkoutStep ? 'bg-[#D4EAE6]' : 'bg-zinc-700/50'}`} />
+                <div key={step} className="flex-1 h-1.5 rounded-full bg-zinc-700/50 overflow-hidden">
+                  <motion.div
+                    className="h-full rounded-full bg-[#D4EAE6] origin-left"
+                    initial={false}
+                    animate={{ scaleX: step <= checkoutStep ? 1 : 0 }}
+                    transition={{ duration: 0.36, ease: EASE_IN_OUT }}
+                  />
+                </div>
               ))}
             </div>
 
             <div className="flex items-center justify-between mb-6 sm:mb-8">
-              <h3 className="text-2xl font-sans font-semibold tracking-tight text-white">
-                {checkoutStep === 1 && 'Detalii personale'}
-                {checkoutStep === 2 && (orderType === 'livrare' ? 'Adresă de livrare' : 'Detalii ridicare')}
-                {checkoutStep === 3 && 'Sumar & Plată'}
-              </h3>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.h3
+                  key={checkoutStep}
+                  initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: -10, filter: 'blur(4px)' }}
+                  transition={SWAP}
+                  className="text-2xl font-sans font-semibold tracking-tight text-white"
+                >
+                  {checkoutStep === 1 && 'Detalii personale'}
+                  {checkoutStep === 2 && (orderType === 'livrare' ? 'Adresă de livrare' : 'Detalii ridicare')}
+                  {checkoutStep === 3 && 'Sumar & Plată'}
+                </motion.h3>
+              </AnimatePresence>
             </div>
 
-            <div className="flex-1 relative flex flex-col">
+            {/* The card follows the height of the step on screen, and animates when a field or the map appears. */}
+            <AutoHeight>
               <AnimatePresence mode="wait">
                 {checkoutStep === 1 && (
-                  <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col h-full flex-1">
+                  <motion.div key="step1" {...STEP_MOTION} className="flex flex-col">
                      <div className="space-y-4">
                        <PillInput id="name" label="Nume și Prenume" type="text" placeholder="Ex: Ion Popescu" value={name} onChange={(e: any)=>setName(e.target.value)} required />
                        <PillInput id="phone" label="Număr de Telefon" type="tel" placeholder="07XX XXX XXX" value={phone} onChange={(e: any)=>setPhone(e.target.value)} required />
-                     </div>
-                     <div className="flex-1 min-h-[2rem]"></div>
-                     
-                     <div className="pt-8 sm:pt-4">
-                       <button type="button" onClick={() => { if(name && phone) setCheckoutStep(2) }} className={`w-full bg-[#D4EAE6] text-zinc-900 py-4 rounded-full font-semibold transition active:scale-95 shadow-[0_4px_20px_rgba(212,234,230,0.3)] ${(name && phone) ? 'hover:bg-[#B8D6D1]' : 'opacity-50 cursor-not-allowed'}`}>
+                     </div>                     
+                     <div className="pt-6">
+                       <button type="button" onClick={() => { if(name && phone) setCheckoutStep(2) }} className={`w-full bg-[#D4EAE6] text-zinc-900 py-4 rounded-full font-semibold transition active:scale-95 glow-opal ${(name && phone) ? 'hover:bg-[#B8D6D1]' : 'opacity-50 cursor-not-allowed'}`}>
                           Continuă la {orderType === 'livrare' ? 'Adresă' : 'Detalii'}
                        </button>
                      </div>
@@ -200,12 +322,12 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
                 )}
                 
                 {checkoutStep === 2 && (
-                  <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col h-full flex-1">
+                  <motion.div key="step2" {...STEP_MOTION} className="flex flex-col">
                      <div className="space-y-6">
                        {orderType === 'livrare' && (
                          <div className="space-y-4">
                            <PillInput id="address" label="Adresă completă" type="text" placeholder="Strada, Număr, Bloc, Etaj, Ap..." value={address} onChange={(e: any)=>setAddress(e.target.value)} required />
-                           <div className="rounded-[24px] overflow-hidden border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+                           <div className="rounded-card overflow-hidden glass-edge">
                              <LocationMap />
                            </div>
                          </div>
@@ -229,12 +351,10 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
                          )}
                        </div>
                      </div>
-
-                     <div className="flex-1 min-h-[2rem]"></div>
                      
-                     <div className="flex gap-3 pt-8 sm:pt-4">
+                     <div className="flex gap-3 pt-6">
                        <button type="button" onClick={() => setCheckoutStep(1)} className="px-6 py-4 rounded-full bg-zinc-800 border border-white/10 text-white font-medium hover:bg-zinc-700 transition active:scale-95">Înapoi</button>
-                       <button type="button" onClick={() => { if(orderType !== 'livrare' || address) setCheckoutStep(3) }} className={`flex-1 bg-[#D4EAE6] text-zinc-900 py-4 rounded-full font-semibold transition active:scale-95 shadow-[0_4px_20px_rgba(212,234,230,0.3)] ${(orderType !== 'livrare' || address) ? 'hover:bg-[#B8D6D1]' : 'opacity-50 cursor-not-allowed'}`}>
+                       <button type="button" onClick={() => { if(orderType !== 'livrare' || address) setCheckoutStep(3) }} className={`flex-1 bg-[#D4EAE6] text-zinc-900 py-4 rounded-full font-semibold transition active:scale-95 glow-opal ${(orderType !== 'livrare' || address) ? 'hover:bg-[#B8D6D1]' : 'opacity-50 cursor-not-allowed'}`}>
                          Continuă la Plată
                        </button>
                      </div>
@@ -242,7 +362,7 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
                 )}
 
                 {checkoutStep === 3 && (
-                  <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col h-full flex-1">
+                  <motion.div key="step3" {...STEP_MOTION} className="flex flex-col">
                      
                      <div className="space-y-4 text-zinc-300 mb-6 pb-6 border-b border-zinc-700/60 text-sm">
                        <div className="flex justify-between">
@@ -272,20 +392,18 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
                          ]}
                        />
                      </div>
-
-                     <div className="flex-1 min-h-[2rem]"></div>
                      
-                     <div className="flex gap-3 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-0">
+                     <div className="flex gap-3 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-0">
                        <button type="button" onClick={() => setCheckoutStep(2)} className="px-6 py-4 rounded-full bg-zinc-800 border border-white/10 text-white font-medium hover:bg-zinc-700 transition active:scale-95">Înapoi</button>
-                       <button onClick={handlePlaceOrder} className="flex-1 bg-[#D4EAE6] text-zinc-900 py-4 rounded-full font-semibold hover:bg-[#B8D6D1] transition active:scale-95 shadow-[0_4px_20px_rgba(212,234,230,0.3)] flex items-center justify-center gap-2">
+                       <button onClick={handlePlaceOrder} className="flex-1 bg-[#D4EAE6] text-zinc-900 py-4 rounded-full font-semibold hover:bg-[#B8D6D1] transition active:scale-95 glow-opal flex items-center justify-center gap-2">
                          <span>Confirmă comanda</span>
                        </button>
                      </div>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
-          </div>
+            </AutoHeight>
+          </motion.div>
         </div>
       </div>
     </div>

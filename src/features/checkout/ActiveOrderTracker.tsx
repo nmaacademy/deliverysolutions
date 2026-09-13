@@ -1,7 +1,8 @@
 import { ChevronRight } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Order } from '../../types';
 import { shortOrderId } from '../../lib/format';
+import { SPRING_SNAPPY, SWAP } from '../../lib/motion';
 import { FadeInImage } from '../../components/ui/FadeInImage';
 import { STATUS_ICONS, statusMessage, trackerSubtitle, trackerProgress, TRACKER_PHASE_COUNT } from './orderStatus';
 
@@ -10,8 +11,12 @@ interface Props {
   onOpen: () => void;
 }
 
-/** Glass pill pinned over the menu (same look as the cart button) that keeps a placed order one tap away. */
+/**
+ * A slim frosted-glass pill pinned at the top of the customer app, keeping a placed order one tap away.
+ * The glass is only lightly tinted, so the page scrolling underneath stays visible through it.
+ */
 export default function ActiveOrderTracker({ order, onOpen }: Props) {
+  const reduceMotion = useReducedMotion();
   const refused = order.status === 'Refuzată';
   const progress = trackerProgress(order);
   const Icon = STATUS_ICONS[order.status];
@@ -20,49 +25,59 @@ export default function ActiveOrderTracker({ order, onOpen }: Props) {
   const image = order.items[0]?.menuItem.image;
 
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onOpen}
       aria-label={`Comanda #${shortId}: ${message}. Vezi detalii`}
-      className="w-full flex items-center gap-3 pl-2 pr-4 py-2 rounded-full text-left text-white bg-zinc-800/90 backdrop-blur-2xl border-[0.5px] border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.3)] hover:bg-zinc-700/90 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
+      whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+      whileHover={reduceMotion ? undefined : { scale: 1.01 }}
+      transition={SPRING_SNAPPY}
+      className="w-full flex items-center gap-2.5 pl-1.5 pr-2.5 py-1.5 rounded-full text-left text-white bg-zinc-900/30 backdrop-blur-xl backdrop-saturate-150 glass-float hover:bg-zinc-900/40 transition-colors [text-shadow:0_1px_2px_rgb(0_0_0/0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
     >
       <span className="relative shrink-0">
         {image ? (
-          <FadeInImage src={image} alt="" className="w-12 h-12 rounded-full bg-zinc-700" imageClassName={refused ? 'grayscale opacity-60' : ''} />
+          <FadeInImage src={image} alt="" className="w-9 h-9 rounded-full bg-zinc-700" imageClassName={refused ? 'grayscale opacity-60' : ''} />
         ) : (
-          <span className="block w-12 h-12 rounded-full bg-zinc-700" />
+          <span className="block w-9 h-9 rounded-full bg-zinc-700" />
         )}
-        <span
+        {/* Pops each time the status changes, so a change is noticed even out of the corner of an eye. */}
+        <motion.span
+          key={order.status}
           aria-hidden
-          className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 grid place-items-center rounded-full ring-2 ring-zinc-800 ${
+          initial={reduceMotion ? false : { scale: 0.5, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', duration: 0.4, bounce: 0.3 }}
+          className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 grid place-items-center rounded-full ring-2 ring-zinc-900/80 ${
             refused ? 'bg-red-500 text-white' : 'bg-[#D4EAE6] text-zinc-900'
           }`}
         >
-          <Icon size={11} strokeWidth={2.75} />
-        </span>
+          <Icon size={9} strokeWidth={3} />
+        </motion.span>
       </span>
 
       <span className="flex-1 min-w-0">
-        {/* The headline swaps with a soft fade as the kitchen and the courier move the order along. */}
-        <span className="block relative h-[19px] overflow-hidden">
-          <AnimatePresence mode="wait">
+        {/* The headline swaps with a soft rise and blur as the kitchen and the courier move the order along. */}
+        <span className="block relative h-4 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
             <motion.span
               key={order.status}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="block text-[15px] font-semibold leading-tight truncate"
+              initial={{ opacity: 0, y: 8, filter: 'blur(3px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
+              transition={SWAP}
+              className="block text-[13px] font-semibold leading-4 truncate"
             >
               {message}
             </motion.span>
           </AnimatePresence>
         </span>
-        <span className={`block text-[12px] mt-0.5 truncate ${refused ? 'text-red-300' : 'text-zinc-400'}`}>{trackerSubtitle(order)}</span>
+        <span className={`block text-[11px] leading-[14px] mt-px truncate ${refused ? 'text-red-300' : 'text-zinc-300'}`}>
+          {trackerSubtitle(order)}
+        </span>
         {!refused && (
-          <span aria-hidden className="mt-1.5 flex gap-1.5">
+          <span aria-hidden className="mt-1 flex gap-1">
             {Array.from({ length: TRACKER_PHASE_COUNT }, (_, i) => (
-              <span key={i} className="relative h-[3px] flex-1 rounded-full bg-white/15 overflow-hidden">
+              <span key={i} className="relative h-[2px] flex-1 rounded-full bg-white/20 overflow-hidden">
                 {i < progress.phase && <span className="absolute inset-0 bg-[#D4EAE6]" />}
                 {i === progress.phase && (
                   <>
@@ -79,10 +94,10 @@ export default function ActiveOrderTracker({ order, onOpen }: Props) {
         )}
       </span>
 
-      <span className="shrink-0 flex items-center gap-0.5 text-zinc-500">
-        <span className="text-[10px] font-bold uppercase tracking-wider tabular-nums">#{shortId}</span>
-        <ChevronRight size={18} />
+      <span className="shrink-0 flex items-center text-zinc-300/80">
+        <span className="text-[9px] font-bold uppercase tracking-wider tabular-nums">#{shortId}</span>
+        <ChevronRight size={16} />
       </span>
-    </button>
+    </motion.button>
   );
 }

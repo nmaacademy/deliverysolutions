@@ -5,7 +5,7 @@
  */
 
 /** Vertical slot one active-order tracker pill takes up when pinned above a page. */
-export const TRACKER_SLOT_PX = 72;
+export const TRACKER_SLOT_PX = 56;
 
 /** Breathing room between the top of the screen and a page's first element. */
 const TOP_GAP_PX = 16;

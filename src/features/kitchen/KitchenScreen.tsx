@@ -28,7 +28,8 @@ function useNow(intervalMs: number) {
 
 const oldestFirst = (a: Order, b: Order) => a.createdAt.getTime() - b.createdAt.getTime();
 
-const PILL = 'h-[52px] rounded-full text-sm font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:opacity-60 disabled:cursor-not-allowed';
+// 44px tall: still a comfortable target for a cook tapping a tablet, without making every ticket tall.
+const PILL = 'h-11 px-3 rounded-full text-[12px] font-bold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:opacity-60 disabled:cursor-not-allowed';
 
 /**
  * New tickets can be refused from a small secondary button. Refusing takes a second tap on the
@@ -54,42 +55,43 @@ function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdva
 
   if (confirming) {
     return (
-      <div className="flex gap-3">
+      <div className="flex gap-2">
         <button type="button" onClick={() => setConfirming(false)} className={`${PILL} flex-1 bg-white/[0.06] border border-white/10 text-zinc-300 hover:bg-white/10 focus-visible:ring-white/40`}>
           Renunță
         </button>
         <motion.button
           type="button"
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.97 }}
           disabled={busy}
           onClick={once(onRefuse)}
-          className={`${PILL} flex-[1.5] px-4 bg-red-500 text-white hover:bg-red-400 focus-visible:ring-red-400`}
+          className={`${PILL} flex-1 bg-red-500 text-white hover:bg-red-400 focus-visible:ring-red-400`}
         >
-          Refuză comanda
+          Refuză
         </motion.button>
       </div>
     );
   }
 
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-2">
       {isNew && (
         <button
           type="button"
           onClick={() => setConfirming(true)}
           aria-label="Refuză comanda"
           title="Refuză comanda"
-          className="w-[52px] h-[52px] shrink-0 grid place-items-center rounded-full bg-white/[0.06] border border-white/10 text-zinc-400 hover:text-red-300 hover:bg-red-500/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+          className="w-11 h-11 shrink-0 grid place-items-center rounded-full bg-white/[0.06] border border-white/10 text-zinc-400 hover:text-red-300 hover:bg-red-500/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
         >
-          <X size={20} />
+          <X size={18} />
         </button>
       )}
       <motion.button
         type="button"
-        whileTap={{ scale: 0.98 }}
+        whileTap={{ scale: 0.97 }}
         disabled={busy}
         onClick={once(onAdvance)}
-        className={`${PILL} flex-1 ${
+        aria-label={isNew ? 'Acceptă și începe prepararea' : 'Comanda este gata'}
+        className={`${PILL} flex-1 min-w-0 ${
           isNew
             ? 'bg-amber-400 text-amber-950 hover:bg-amber-300 shadow-[0_4px_20px_rgba(251,191,36,0.2)] focus-visible:ring-amber-400'
             : 'bg-[#D4EAE6] text-zinc-900 hover:bg-[#c5dfda] shadow-[0_4px_20px_rgba(212,234,230,0.18)] focus-visible:ring-[#D4EAE6]'
@@ -97,13 +99,13 @@ function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdva
       >
         {isNew ? (
           <>
-            Acceptă și începe prepararea
-            <ArrowRight size={18} />
+            Acceptă
+            <ArrowRight size={16} />
           </>
         ) : (
           <>
-            <CheckCircle2 size={18} />
-            Comanda este gata
+            <CheckCircle2 size={16} />
+            Gata
           </>
         )}
       </motion.button>
@@ -114,14 +116,16 @@ function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdva
 function Column({ title, count, empty, children }: { title: string; count: number; empty: string; children: ReactNode }) {
   return (
     <section>
-      <div className="flex items-baseline justify-between px-1 mb-3">
-        <h2 className="text-[13px] font-semibold text-zinc-400">{title}</h2>
-        <span className="text-[13px] text-zinc-500 tabular-nums">{count}</span>
+      <div className="flex items-center justify-between px-1 mb-2.5">
+        <h2 className="text-[12px] font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
+        <span className="min-w-6 h-6 px-2 grid place-items-center rounded-full bg-white/[0.06] text-[12px] font-semibold text-zinc-300 tabular-nums">{count}</span>
       </div>
       {count === 0 ? (
-        <p className="rounded-[32px] border border-dashed border-white/10 px-6 py-10 text-center text-[14px] text-zinc-500">{empty}</p>
+        <p className="rounded-card border border-dashed border-white/10 px-5 py-8 text-center text-[13px] text-zinc-500">{empty}</p>
       ) : (
-        <div className="grid gap-4 2xl:grid-cols-2 items-start">
+        // As many ticket columns as the lane has room for: one on a portrait tablet, two in landscape,
+        // three or more on a large display.
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(228px,1fr))] items-start">
           <AnimatePresence mode="popLayout">{children}</AnimatePresence>
         </div>
       )}
@@ -129,6 +133,10 @@ function Column({ title, count, empty, children }: { title: string; count: numbe
   );
 }
 
+/**
+ * The kitchen display, laid out for a tablet on the pass: compact tickets in two lanes side by side
+ * from portrait tablet width upwards, packed into as many columns as each lane can hold.
+ */
 export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onLogout }: Props) {
   const now = useNow(30_000);
   const { notifications, dismiss, highlightedIds } = useOrderAlerts(orders, 'kitchen');
@@ -151,10 +159,11 @@ export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onL
             : { boxShadow: '0 0 0 0 rgba(251,191,36,0)' }
         }
         transition={justArrived ? { duration: 1.6, repeat: 2, ease: 'easeInOut' } : { duration: 0.3 }}
-        className="rounded-[32px]"
+        className="rounded-card"
       >
         <OrderCard
           order={order}
+          density="compact"
           variant={isNew ? 'highlighted' : 'default'}
           delay={index}
           actionButtons={nextStatus && (
@@ -179,8 +188,8 @@ export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onL
 
       <NotificationStack notifications={notifications} onDismiss={dismiss} />
 
-      <header className="sticky top-0 z-30 bg-zinc-950/70 backdrop-blur-2xl border-b border-white/[0.06] px-4 sm:px-6 pt-[calc(env(safe-area-inset-top)+20px)] pb-4">
-        <div className="max-w-7xl mx-auto flex items-center gap-3">
+      <header className="sticky top-0 z-30 bg-zinc-950/70 backdrop-blur-2xl border-b border-white/[0.06] px-4 sm:px-5 pt-[calc(env(safe-area-inset-top)+12px)] pb-3">
+        <div className="max-w-[1600px] mx-auto flex items-center gap-3">
           <button
             onClick={onBack}
             aria-label="Înapoi"
@@ -189,16 +198,16 @@ export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onL
             <ChevronLeft size={20} />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-[22px] font-semibold tracking-tight text-white leading-tight">Bucătărie</h1>
-            <p className="text-[13px] text-zinc-400 truncate">
+            <h1 className="text-[20px] font-semibold tracking-tight text-white leading-tight">Bucătărie</h1>
+            <p className="text-[12px] text-zinc-400 truncate">
               {newOrders.length} {newOrders.length === 1 ? 'nouă' : 'noi'} · {cooking.length} în preparare
             </p>
           </div>
           <div className="text-right shrink-0">
-            <div className="hidden sm:block text-[13px] text-zinc-400 first-letter:uppercase">
+            <div className="hidden sm:block text-[12px] text-zinc-400 first-letter:uppercase">
               {now.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
             </div>
-            <div className="text-[20px] font-semibold text-white tabular-nums leading-tight">{formatTime(now)}</div>
+            <div className="text-[18px] font-semibold text-white tabular-nums leading-tight">{formatTime(now)}</div>
           </div>
           {onLogout && (
             <button
@@ -213,16 +222,16 @@ export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onL
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-[calc(env(safe-area-inset-bottom)+32px)]">
+      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-5 pt-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
         {newOrders.length === 0 && cooking.length === 0 ? (
-          <div className="mt-16 mx-auto max-w-md rounded-[32px] bg-white/[0.05] border border-white/10 backdrop-blur-2xl px-8 py-12 text-center">
+          <div className="mt-16 mx-auto max-w-md rounded-card bg-white/[0.05] border border-white/10 backdrop-blur-2xl px-8 py-12 text-center">
             <CheckCircle2 size={48} className="mx-auto text-[#D4EAE6]/70" />
             <p className="mt-4 text-[20px] font-semibold tracking-tight text-white">Nicio comandă activă</p>
             <p className="mt-1 text-[14px] text-zinc-400">Toate comenzile au fost preparate.</p>
           </div>
         ) : (
           // Two lanes, like a kitchen display: accept new tickets on the left, finish cooking on the right.
-          <div className="grid gap-8 lg:grid-cols-2 items-start">
+          <div className="grid gap-5 md:grid-cols-2 items-start">
             <Column title="Comenzi noi" count={newOrders.length} empty="Nicio comandă nouă">
               {newOrders.map(renderCard)}
             </Column>
