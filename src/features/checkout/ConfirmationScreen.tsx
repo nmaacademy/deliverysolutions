@@ -1,16 +1,19 @@
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Check, X } from 'lucide-react';
 import { Order } from '../../types';
 import { ORDER_STEPS } from '../../lib/orderFlow';
-import { STATUS_ICONS, statusLabel, isFinished } from './orderStatus';
+import { STATUS_ICONS, statusLabel, statusMessage, isFinished } from './orderStatus';
 
 interface Props {
   order: Order;
-  onSimulateProgress: () => void;
   onBackToMenu: () => void;
 }
 
-export default function ConfirmationScreen({ order, onSimulateProgress, onBackToMenu }: Props) {
+/**
+ * The customer's tracking page: read-only. Statuses only move when the kitchen or the courier act,
+ * and the change arrives here through the cross-tab sync.
+ */
+export default function ConfirmationScreen({ order, onBackToMenu }: Props) {
   const steps = ORDER_STEPS[order.type];
   const currentStepIndex = steps.indexOf(order.status);
   const finished = isFinished(order);
@@ -56,10 +59,26 @@ export default function ConfirmationScreen({ order, onSimulateProgress, onBackTo
       <h2 className="text-3xl sm:text-4xl font-sans font-semibold tracking-tight text-white mb-3 text-center">
         {finished ? `Comandă ${order.type === 'livrare' ? 'livrată' : 'ridicată'}` : 'Comandă confirmată'}
       </h2>
-      <p className="text-zinc-300 mb-10 sm:mb-12 text-center text-sm sm:text-lg">
+      {/* Live status line: it swaps with a soft fade whenever the kitchen or the courier moves the order. */}
+      <div className="min-h-[3.5rem] sm:min-h-[4rem] mb-8 sm:mb-10 w-full grid [grid-template-areas:'status'] place-items-center">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={order.status}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="[grid-area:status] text-center text-base sm:text-xl font-medium text-[#D4EAE6]"
+          >
+            {statusMessage(order)}
+          </motion.p>
+        </AnimatePresence>
+      </div>
+
+      <p className="text-zinc-400 mb-10 sm:mb-12 text-center text-sm sm:text-base">
         {finished
           ? `Poftă bună, ${order.customerName}! Mulțumim pentru comanda #${order.id}.`
-          : `Mulțumim, ${order.customerName}. Comanda #${order.id} a fost primită.`}
+          : `Mulțumim, ${order.customerName}. Comanda #${order.id} este urmărită în timp real.`}
       </p>
 
       <div className="bg-zinc-800 rounded-[28px] p-6 sm:p-8 border border-zinc-700 w-full mb-8 sm:mb-10">
@@ -102,14 +121,6 @@ export default function ConfirmationScreen({ order, onSimulateProgress, onBackTo
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 w-full pb-8">
-        {currentStepIndex < steps.length - 1 && (
-          <button
-            onClick={onSimulateProgress}
-            className="flex-1 min-h-[44px] bg-zinc-800 border border-zinc-700 text-zinc-200 py-3 sm:py-4 rounded-[32px] font-medium hover:bg-zinc-700 hover:text-white transition"
-          >
-            Simulează progres
-          </button>
-        )}
         <button
           onClick={onBackToMenu}
           className="flex-1 min-h-[44px] bg-[#D4EAE6] text-zinc-900 py-3 sm:py-4 rounded-[32px] font-medium hover:bg-[#B8D6D1] transition active:scale-[0.98]"

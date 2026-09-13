@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { ChevronLeft, Plus, Edit2, ListOrdered, LayoutGrid, LogOut } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { MenuItem, Order, OrderStatus } from '../../types';
-import { getNextStatus } from '../../lib/orderFlow';
+import { allowedTransitions } from '../../lib/orderFlow';
+import { formatTime } from '../../lib/format';
 import { FadeInImage } from '../../components/ui/FadeInImage';
 import OrderCard from '../../components/orders/OrderCard';
 import ProductModal from './ProductModal';
@@ -32,6 +33,10 @@ export default function AdminScreen({ orders, menuItems, onUpdateOrderStatus, on
         <div>
           <h1 className="text-2xl sm:text-3xl font-sans font-semibold tracking-tight text-white mb-1">Panou Control</h1>
           <p className="text-zinc-400 text-xs sm:text-sm">Gestionează comenzile și disponibilitatea meniului.</p>
+          <p className="text-amber-300/80 text-[11px] sm:text-xs mt-1">
+            Butoanele de status de mai jos sunt instrumente de administrare pentru demonstrație. În flux normal, statusul
+            este schimbat de bucătărie și de curier.
+          </p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
           <button onClick={onBack} className="flex-1 flex items-center justify-center px-5 min-h-[44px] bg-white/5 border-[0.5px] border-white/10 text-zinc-300 rounded-full hover:bg-white/10 hover:text-white transition font-medium text-[10px] tracking-wider uppercase sm:flex-none shadow-sm active:scale-95">
@@ -76,7 +81,9 @@ export default function AdminScreen({ orders, menuItems, onUpdateOrderStatus, on
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
             {activeOrders.map((order, index) => {
-              const nextStatus = getNextStatus(order.type, order.status);
+              // Admin demo tool: one step forward along the order's own flow, never a jump or a rollback.
+              const [nextStatus] = allowedTransitions('admin', order.type, order.status);
+              const history = order.statusHistory ?? [];
 
               return (
                 <OrderCard
@@ -85,23 +92,32 @@ export default function AdminScreen({ orders, menuItems, onUpdateOrderStatus, on
                   showTotal={true}
                   delay={index}
                   actionButtons={
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500 mb-1">Status curent</span>
-                        <span className="text-sm font-semibold text-white">{order.status}</span>
-                      </div>
-                      
-                      {nextStatus ? (
-                        <button 
-                          onClick={() => onUpdateOrderStatus(order.id, nextStatus)}
-                          className="bg-[#D4EAE6] text-zinc-900 px-5 py-3 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-[#B8D6D1] transition active:scale-95 shadow-[0_4px_16px_rgba(212,234,230,0.2)] whitespace-nowrap"
-                        >
-                          Avansează: {nextStatus}
-                        </button>
-                      ) : (
-                        <div className="bg-white/5 text-zinc-400 px-5 py-3 rounded-full text-[10px] font-bold uppercase tracking-wider text-center border border-white/10">
-                          Finalizată
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500 mb-1">Status curent</span>
+                          <span className="text-sm font-semibold text-white">{order.status}</span>
                         </div>
+
+                        {nextStatus ? (
+                          <button
+                            onClick={() => onUpdateOrderStatus(order.id, nextStatus)}
+                            title="Instrument demo: avansează manual statusul"
+                            className="bg-[#D4EAE6] text-zinc-900 px-5 py-3 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-[#B8D6D1] transition active:scale-95 shadow-[0_4px_16px_rgba(212,234,230,0.2)] whitespace-nowrap"
+                          >
+                            Demo · Avansează: {nextStatus}
+                          </button>
+                        ) : (
+                          <div className="bg-white/5 text-zinc-400 px-5 py-3 rounded-full text-[10px] font-bold uppercase tracking-wider text-center border border-white/10">
+                            Finalizată
+                          </div>
+                        )}
+                      </div>
+
+                      {history.length > 0 && (
+                        <p className="text-[11px] text-zinc-500 leading-relaxed">
+                          {history.map(event => `${event.status} ${formatTime(new Date(event.at))}`).join(' · ')}
+                        </p>
                       )}
                     </div>
                   }

@@ -2,9 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback, ReactNode } from 're
 import { ChevronLeft, Map as MapIcon, List, PackageOpen, Bike, LogOut, LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Order, OrderStatus } from '../../types';
+import { isCourierActive, isCourierAvailable } from '../../lib/orderFlow';
 import { leafletDocument } from '../../components/map/leafletDocument';
 import CourierOrderCard from './CourierOrderCard';
 import OrderDetailsSheet from './OrderDetailsSheet';
+import NotificationStack from '../notifications/NotificationStack';
+import { useOrderAlerts } from '../notifications/useOrderAlerts';
 
 interface Props {
   orders: Order[];
@@ -95,10 +98,6 @@ const COURIER_MAP_HTML = leafletDocument({
   `,
 });
 
-// Ready orders first, then the ones still in the kitchen.
-const AVAILABLE_PRIORITY: Partial<Record<OrderStatus, number>> = { 'Gata de ridicare': 0, 'În preparare': 1 };
-const MY_STATUSES: OrderStatus[] = ['Preluată de curier', 'Pe drum'];
-
 const TABS: { id: 'list' | 'map'; label: string; icon: LucideIcon }[] = [
   { id: 'list', label: 'Comenzi', icon: List },
   { id: 'map', label: 'Hartă', icon: MapIcon },
@@ -123,24 +122,23 @@ function EmptyState({ icon: Icon, children }: { icon: LucideIcon; children: Reac
 }
 
 export default function CourierScreen({ orders, onUpdateOrderStatus, onBack, onLogout }: Props) {
+  const { notifications, dismiss, highlightedIds } = useOrderAlerts(orders, 'courier');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Only deliveries the kitchen has already finished are up for grabs; anything still cooking stays
+  // out of the courier's way until it reaches "Gata de ridicare".
   const { availableOrders, myOrders } = useMemo(() => {
     const byAge = (a: Order, b: Order) => a.createdAt.getTime() - b.createdAt.getTime();
-    const deliveryOrders = orders.filter(o => o.type === 'livrare');
     return {
-      myOrders: deliveryOrders.filter(o => MY_STATUSES.includes(o.status)).sort(byAge),
-      availableOrders: deliveryOrders
-        .filter(o => AVAILABLE_PRIORITY[o.status] !== undefined)
-        .sort((a, b) => AVAILABLE_PRIORITY[a.status]! - AVAILABLE_PRIORITY[b.status]! || byAge(a, b)),
+      myOrders: orders.filter(isCourierActive).sort(byAge),
+      availableOrders: orders.filter(isCourierAvailable).sort(byAge),
     };
   }, [orders]);
 
   // Keep the sheet in sync with live order updates (status changes, polling).
   const selectedOrder = orders.find(o => o.id === selectedOrderId) ?? null;
-  const readyCount = availableOrders.filter(o => o.status === 'Gata de ridicare').length;
 
   const postMarkers = useCallback(() => {
     const markers = myOrders
@@ -177,7 +175,7 @@ export default function CourierScreen({ orders, onUpdateOrderStatus, onBack, onL
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-semibold tracking-tight text-white">Curier</h1>
             <p className="text-[12px] text-zinc-500 tabular-nums truncate">
-              {myOrders.length} {myOrders.length === 1 ? 'cursă activă' : 'curse active'} · {readyCount} gata de ridicare
+              {myOrders.length} {myOrders.length === 1 ? 'cursă activă' : 'curse active'} · {availableOrders.length} {availableOrders.length === 1 ? 'disponibilă' : 'disponibile'}
             </p>
           </div>
           {onLogout && (
@@ -232,12 +230,20 @@ export default function CourierScreen({ orders, onUpdateOrderStatus, onBack, onL
             <section aria-label="Comenzi disponibile">
               <SectionHeader title="Disponibile" count={availableOrders.length} />
               {availableOrders.length === 0 ? (
-                <EmptyState icon={PackageOpen}>Nu există comenzi noi.</EmptyState>
+                <EmptyState icon={PackageOpen}>Nicio comandă gata de ridicare.</EmptyState>
               ) : (
                 <div className="flex flex-col gap-4">
                   <AnimatePresence mode="popLayout">
                     {availableOrders.map((order, i) => (
-                      <CourierOrderCard key={order.id} order={order} index={i} isActiveRun={false} onOpen={openOrder} onAdvance={onUpdateOrderStatus} />
+                      <CourierOrderCard
+                        key={order.id}
+                        order={order}
+                        index={i}
+                        isActiveRun={false}
+                        isNew={highlightedIds.includes(order.id)}
+                        onOpen={openOrder}
+                        onAdvance={onUpdateOrderStatus}
+                      />
                     ))}
                   </AnimatePresence>
                 </div>
@@ -274,6 +280,8 @@ export default function CourierScreen({ orders, onUpdateOrderStatus, onBack, onL
           })}
         </div>
       </nav>
+
+      <NotificationStack notifications={notifications} onDismiss={dismiss} />
 
       <OrderDetailsSheet order={selectedOrder} onClose={closeOrder} />
     </div>

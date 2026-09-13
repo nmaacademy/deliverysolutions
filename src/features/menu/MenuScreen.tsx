@@ -1,74 +1,110 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Plus } from 'lucide-react';
 import { MenuItem, OrderType } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { FadeInImage } from '../../components/ui/FadeInImage';
+import { CLIENT_PAGE_BOTTOM, clientTopPadding } from '../client/layout';
 
 interface Props {
   menuItems: MenuItem[];
   orderType: OrderType;
   setOrderType: (type: OrderType) => void;
   onSelectItem: (item: MenuItem) => void;
-  /** Order trackers pinned over the top of the hero; the hero grows so they don't cover its text. */
+  /** Order trackers pinned above the page; the header starts below them. */
   trackerCount?: number;
+  /** The category currently marked, shared with the Home carousel. Highlighting only. */
+  selectedCategory?: string | null;
+  /**
+   * One-shot navigation intent: set only when the visitor arrived by tapping a category card, so
+   * opening the Menu tab normally still restores where the page was left.
+   */
+  scrollToCategory?: string | null;
+  onScrolledToCategory?: () => void;
 }
 
-const TRACKER_SLOT_PX = 72;
+/** Anchor id for a category block, used by the quick-access chips. */
+const categoryId = (category: string) => `meniu-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
-export default function MenuScreen({ menuItems, orderType, setOrderType, onSelectItem, trackerCount = 0 }: Props) {
+export default function MenuScreen({
+  menuItems,
+  orderType,
+  setOrderType,
+  onSelectItem,
+  trackerCount = 0,
+  selectedCategory = null,
+  scrollToCategory = null,
+  onScrolledToCategory,
+}: Props) {
   const categories = useMemo(() => {
     return Array.from(new Set(menuItems.map(i => i.category)));
   }, [menuItems]);
 
-  const heroInset = Math.min(trackerCount, 2) * TRACKER_SLOT_PX;
+  // Arriving from a category card: jump to that block once, then hand the intent back as consumed.
+  useEffect(() => {
+    if (!scrollToCategory) return;
+    document.getElementById(categoryId(scrollToCategory))?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    onScrolledToCategory?.();
+  }, [scrollToCategory, onScrolledToCategory]);
 
   return (
-    <div className="pb-32">
-      {/* Hero Section */}
-      <div
-        className="relative w-full h-[45svh] min-h-[400px] mb-10 transition-[height,min-height] duration-300"
-        style={heroInset ? { height: `calc(45svh + ${heroInset}px)`, minHeight: 400 + heroInset } : undefined}
-      >
-        <div className="absolute inset-0">
-          <img src="https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&q=80" alt="Chef flambeing in dark kitchen" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-zinc-900/70" />
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/40 to-transparent" />
+    <div className={CLIENT_PAGE_BOTTOM} style={{ paddingTop: clientTopPadding(trackerCount) }}>
+      {/* Header: the big hero now lives on the Home page, so the menu starts with the essentials. */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h1 className="text-[28px] sm:text-[32px] font-sans font-semibold tracking-tight text-white mb-1">Meniu</h1>
+        <p className="text-[13px] text-zinc-400 mb-5">Apasă un produs pentru a-l personaliza.</p>
+
+        <div className="w-full max-w-[280px] sm:max-w-[320px] relative">
+          <SegmentedControl
+            id="order-type"
+            value={orderType}
+            onChange={(val) => {
+              triggerVibration(15);
+              setOrderType(val as OrderType);
+            }}
+            options={[
+              { label: 'Livrare', value: 'livrare' },
+              { label: 'Ridicare', value: 'ridicare' }
+            ]}
+          />
         </div>
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center mt-12"
-          style={heroInset ? { paddingTop: heroInset } : undefined}
-        >
-          <span className="text-[#D4EAE6] tracking-[0.2em] uppercase text-xs sm:text-sm font-semibold mb-4 drop-shadow-md">Fine Dining</span>
-          <h1 className="text-5xl sm:text-7xl font-sans font-semibold tracking-tight text-white tracking-tight mb-8 drop-shadow-lg">Restaurant Demo</h1>
-          
-          {/* Delivery Toggle */}
-          <div className="w-full max-w-[280px] sm:max-w-[320px] shadow-2xl relative">
-            <SegmentedControl
-              id="order-type"
-              value={orderType}
-              onChange={(val) => {
-                triggerVibration(15);
-                setOrderType(val as OrderType);
-              }}
-              options={[
-                { label: 'Livrare', value: 'livrare' },
-                { label: 'Ridicare', value: 'ridicare' }
-              ]}
-            />
-          </div>
-        </div>
+
+        {/* Quick access to a category. Buttons, not #anchors, so the page URL stays clean. */}
+        {categories.length > 1 && (
+          <nav aria-label="Categorii" className="mt-5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 overflow-x-auto no-scrollbar">
+            <ul className="flex gap-2 w-max">
+              {categories.map(category => (
+                <li key={category}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerVibration(10);
+                      document.getElementById(categoryId(category))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className={`inline-flex items-center min-h-[44px] px-4 rounded-full border-[0.5px] text-[13px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] ${
+                      category === selectedCategory
+                        ? 'bg-[#D4EAE6] border-[#D4EAE6] text-zinc-900'
+                        : 'bg-white/[0.06] border-white/15 text-zinc-300 hover:bg-white/[0.12] hover:text-white'
+                    }`}
+                  >
+                    {category}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </div>
 
       {/* Menu Categories */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
         {categories.map(category => {
           const items = menuItems.filter(i => i.category === category);
           if (items.length === 0) return null;
-          
+
           return (
-            <div key={category} className="mb-20">
+            <div key={category} id={categoryId(category)} className="mb-20 scroll-mt-[96px]">
               <div className="flex items-center gap-6 mb-12">
                 <div className="flex-1 h-px bg-zinc-700/60"></div>
                 <h2 className="text-3xl font-sans font-semibold tracking-tight text-white text-center">{category}</h2>

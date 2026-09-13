@@ -33,19 +33,32 @@ export const usesDemoSecret = (role: StaffRole) => !ENV_SECRETS[role]?.trim();
 const SESSION_KEY = 'delivery_app_staff_session';
 const SESSION_MS = 12 * 60 * 60 * 1000;
 
+// sessionStorage, not localStorage: the role is per browser tab. Signing in as the kitchen in one tab
+// must not turn the courier tab into a kitchen session while the three screens run side by side.
 export function readStaffSession(): StaffRole | null {
   try {
-    const session = JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null') as { role: StaffRole; expiresAt: number } | null;
+    const session = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null') as { role: StaffRole; expiresAt: number } | null;
     return session && session.role in STAFF_ROLE_LABELS && session.expiresAt > Date.now() ? session.role : null;
   } catch {
     return null;
   }
 }
 
-export const startStaffSession = (role: StaffRole) =>
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ role, expiresAt: Date.now() + SESSION_MS }));
+export function startStaffSession(role: StaffRole) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role, expiresAt: Date.now() + SESSION_MS }));
+  } catch {
+    // Private mode: the screen still opens, the session just doesn't survive a refresh.
+  }
+}
 
-export const endStaffSession = () => localStorage.removeItem(SESSION_KEY);
+export function endStaffSession() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // Nothing to clean up if storage is unavailable.
+  }
+}
 
 /** Off for now: staff screens open freely until VITE_STAFF_AUTH=true. */
 export const STAFF_AUTH_ENABLED = import.meta.env.VITE_STAFF_AUTH === 'true';

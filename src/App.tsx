@@ -1,12 +1,19 @@
-import { useState, useEffect } from 'react';
-import { LayoutDashboard, ChefHat, Check, Package } from 'lucide-react';
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { initialMenu, mockOrders } from './data/mock';
-import { MenuItem, Order, CartItem, OrderType, OrderStatus, Extra } from './types';
+import { MenuItem, Order, CartItem, OrderActor, OrderType, OrderStatus, Extra } from './types';
 import { triggerVibration } from './lib/haptics';
-import { cartSubtotal } from './lib/pricing';
-import { getNextStatus } from './lib/orderFlow';
-import { readMenu, readOrders, saveMenu, saveOrders, readMyOrderIds, saveMyOrderIds } from './lib/storage';
+import { addOrder, updateMenu, updateOrderStatus, useLiveMenu, useLiveOrders } from './lib/liveStore';
+import { readMyOrderIds, saveMyOrderIds } from './lib/storage';
+import { ClientPage, ClientTab, clientUrl, routeFromUrl, staffUrl } from './lib/routes';
+import MobileBottomNav from './components/navigation/MobileBottomNav';
+import ScrollRestore from './features/client/ScrollRestore';
+import { TRACKER_TOP } from './features/client/layout';
+import HomeScreen from './features/home/HomeScreen';
+import HomeSearch from './features/home/HomeSearch';
+import CustomerMapScreen from './features/map/CustomerMapScreen';
+import ProfileScreen from './features/profile/ProfileScreen';
 import MenuScreen from './features/menu/MenuScreen';
 import ItemModal from './features/menu/ItemModal';
 import CartScreen from './features/checkout/CartScreen';
@@ -19,28 +26,91 @@ import CourierScreen from './features/courier/CourierScreen';
 import StaffLogin from './features/auth/StaffLogin';
 import { StaffRole, STAFF_AUTH_ENABLED, canOpen, endStaffSession, readStaffSession, startStaffSession } from './lib/staffAuth';
 
-type ViewState = 'menu' | 'cart' | 'confirmation' | 'admin' | 'kitchen' | 'courier';
+/**
+ * The shell decides *what kind of screen* is on top. The customer app is one of those kinds, and its
+ * four tabs live in `clientPage` — so pages of the customer app never get mixed up with the cart,
+ * the order tracking screen or the staff screens.
+ */
+type ViewState = 'client' | 'cart' | 'confirmation' | 'admin' | 'kitchen' | 'courier';
 
-// Staff screens can be opened directly by URL (e.g. /curier). vercel.json serves index.html for these paths.
-const VIEW_PATHS: Partial<Record<ViewState, string>> = { admin: 'admin', kitchen: 'bucatarie', courier: 'curier' };
+/** Short and low-travel: page swaps should read as a tab change, not as a screen push. */
+const PAGE_TRANSITION = { duration: 0.2, ease: 'easeOut' } as const;
 
-function viewFromUrl(): ViewState {
-  // Older links used English names or a hash (/#courier); keep accepting them.
-  const segment = window.location.pathname.replace(/^\/+|\/+$/g, '') || window.location.hash.slice(1);
-  const view = (Object.keys(VIEW_PATHS) as ViewState[]).find(v => VIEW_PATHS[v] === segment || v === segment);
-  return view ?? 'menu';
+/** How many of each menu item an order contains, for the stock bookkeeping. */
+function countByMenuItem(items: CartItem[]) {
+  const counts = new Map<string, number>();
+  items.forEach(cartItem => {
+    counts.set(cartItem.menuItem.id, (counts.get(cartItem.menuItem.id) ?? 0) + cartItem.quantity);
+  });
+  return counts;
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState>(viewFromUrl);
+  const [initialRoute] = useState(routeFromUrl);
+  const [currentView, setCurrentView] = useState<ViewState>(initialRoute.staff ?? 'client');
+  const [clientPage, setClientPage] = useState<ClientPage>(initialRoute.page);
+  // Each customer page remembers where it was scrolled to; a page never visited starts at the top.
+  const scrollByPage = useRef(new Map<ClientPage, number>());
 
+  // Tidy the address bar once, so a legacy link (/#courier, /menu) settles on its canonical path.
   useEffect(() => {
-    const path = `/${VIEW_PATHS[currentView] ?? ''}`;
+    const path = initialRoute.staff ? staffUrl(initialRoute.staff) : clientUrl(initialRoute.page);
     if (window.location.pathname !== path || window.location.hash) {
       history.replaceState(null, '', path + window.location.search);
     }
-  }, [currentView]);
-  // Staff screens sit behind an authenticator-code login; the session lives in localStorage.
+  }, [initialRoute]);
+
+  /** Customer tabs are real history entries, so the browser's Back button walks between them. */
+  const goToClientPage = useCallback((page: ClientPage) => {
+    setCurrentView('client');
+
+    if (page === clientPage) {
+      // Tapping the tab you are already on takes you back to the top of it.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    scrollByPage.current.set(clientPage, window.scrollY);
+    if (window.location.pathname !== clientUrl(page)) {
+      history.pushState(null, '', clientUrl(page) + window.location.search);
+    }
+    setClientPage(page);
+  }, [clientPage]);
+
+  /** The navbar's cart tab pushes the cart screen; every other tab is a real page. */
+  const goToClientTab = useCallback((tab: ClientTab) => {
+    if (tab === 'cart') {
+      triggerVibration(20);
+      setCurrentView('cart');
+      return;
+    }
+    goToClientPage(tab);
+  }, [goToClientPage]);
+
+  /** A category card marks the category and opens the Menu page already scrolled to it. */
+  const openCategory = useCallback((category: string) => {
+    setMenuCategory(category);
+    setCategoryJump(category);
+    // The Menu page scrolls itself to the category, so the remembered offset must not fight it.
+    scrollByPage.current.set('menu', 0);
+    goToClientPage('menu');
+  }, [goToClientPage]);
+
+  const handleScrolledToCategory = useCallback(() => setCategoryJump(null), []);
+
+  // Back/forward between customer tabs. Staff screens are separate documents, so they are left alone.
+  useEffect(() => {
+    const onPopState = () => {
+      const route = routeFromUrl();
+      if (route.staff) return;
+      setClientPage(route.page);
+      setCurrentView('client');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Staff screens sit behind an authenticator-code login; the session lives in sessionStorage.
   const [staffRole, setStaffRole] = useState<StaffRole | null>(readStaffSession);
   const handleStaffLogin = (role: StaffRole) => {
     startStaffSession(role);
@@ -49,18 +119,24 @@ export default function App() {
   const handleStaffLogout = () => {
     endStaffSession();
     setStaffRole(null);
-    setCurrentView('menu');
+    goToClientPage('home');
   };
   const staffLogin = (role: StaffRole) => (
-    <StaffLogin role={role} onSuccess={() => handleStaffLogin(role)} onBack={() => setCurrentView('menu')} />
+    <StaffLogin role={role} onSuccess={() => handleStaffLogin(role)} onBack={() => goToClientPage('home')} />
   );
 
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => readMenu() ?? initialMenu);
-  const [orders, setOrders] = useState<Order[]>(() => readOrders() ?? mockOrders);
+  // Orders and the menu live in localStorage and are shared live with the kitchen and courier tabs.
+  const orders = useLiveOrders(mockOrders);
+  const menuItems = useLiveMenu(initialMenu);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<OrderType>('livrare');
 
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // One source of truth for the chosen category: the Home carousel marks it, the Menu page marks it.
+  const [menuCategory, setMenuCategory] = useState<string | null>(null);
+  // Separate from the selection above: a one-shot "open the menu at this category" intent.
+  const [categoryJump, setCategoryJump] = useState<string | null>(null);
   // The customer's own orders are tracked by id and always read from `orders`, so status
   // changes made in the kitchen or courier tabs show up here through the storage sync.
   const [myOrderIds, setMyOrderIds] = useState<string[]>(readMyOrderIds);
@@ -72,31 +148,7 @@ export default function App() {
     .filter(o => myOrderIds.includes(o.id))
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-  useEffect(() => saveMenu(menuItems), [menuItems]);
-  useEffect(() => saveOrders(orders), [orders]);
   useEffect(() => saveMyOrderIds(myOrderIds), [myOrderIds]);
-
-  // Poll storage to simulate a realtime backend between tabs (client / kitchen / courier)
-  useEffect(() => {
-    const syncData = () => {
-      const storedOrders = readOrders();
-      if (storedOrders) {
-        setOrders(prev => JSON.stringify(prev) !== JSON.stringify(storedOrders) ? storedOrders : prev);
-      }
-      const storedMenu = readMenu();
-      if (storedMenu) {
-        setMenuItems(prev => JSON.stringify(prev) !== JSON.stringify(storedMenu) ? storedMenu : prev);
-      }
-    };
-
-    const interval = setInterval(syncData, 3000);
-    window.addEventListener('storage', syncData);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', syncData);
-    };
-  }, []);
 
   useEffect(() => {
     if (toast) {
@@ -143,11 +195,8 @@ export default function App() {
     };
 
     // Deduct stock for ordered items
-    setMenuItems(prev => {
-      const itemsToDeduct = new Map<string, number>();
-      newOrder.items.forEach(cartItem => {
-        itemsToDeduct.set(cartItem.menuItem.id, (itemsToDeduct.get(cartItem.menuItem.id) || 0) + cartItem.quantity);
-      });
+    updateMenu(prev => {
+      const itemsToDeduct = countByMenuItem(newOrder.items);
 
       return prev.map(item => {
         if (itemsToDeduct.has(item.id)) {
@@ -162,29 +211,38 @@ export default function App() {
       });
     });
 
-    setOrders(prev => [newOrder, ...prev]);
+    addOrder(newOrder);
     setMyOrderIds(prev => [newOrder.id, ...prev]);
     setTrackedOrderId(newOrder.id);
     setCart([]);
     setCurrentView('confirmation');
   };
 
-  const handleUpdateOrderStatus = (orderId: string, status: OrderStatus) => {
-    const order = orders.find(o => o.id === orderId);
+  /**
+   * Every status change goes through the store, which checks the transition against what this role
+   * is allowed to do. A click on stale data (another tab moved the order first) is simply dropped.
+   */
+  const applyStatus = useCallback((orderId: string, status: OrderStatus, actor: OrderActor) => {
+    const result = updateOrderStatus(orderId, status, actor);
+    if (!result.ok) return;
+
     // A refused order is never cooked, so its items go back into stock.
-    if (status === 'Refuzată' && order && order.status !== 'Refuzată') {
-      const returned = new Map<string, number>();
-      order.items.forEach(cartItem => {
-        returned.set(cartItem.menuItem.id, (returned.get(cartItem.menuItem.id) || 0) + cartItem.quantity);
-      });
-      setMenuItems(prev => prev.map(item =>
+    if (result.order.status === 'Refuzată') {
+      const returned = countByMenuItem(result.order.items);
+      updateMenu(prev => prev.map(item =>
         returned.has(item.id) ? { ...item, stock: item.stock + returned.get(item.id)! } : item
       ));
     }
+  }, []);
 
-    setOrders(prev => prev.map(o =>
-      o.id === orderId ? { ...o, status } : o
-    ));
+  const kitchenUpdateStatus = useCallback((orderId: string, status: OrderStatus) => applyStatus(orderId, status, 'kitchen'), [applyStatus]);
+  const courierUpdateStatus = useCallback((orderId: string, status: OrderStatus) => applyStatus(orderId, status, 'courier'), [applyStatus]);
+  const adminUpdateStatus = useCallback((orderId: string, status: OrderStatus) => applyStatus(orderId, status, 'admin'), [applyStatus]);
+
+  /** A search hit opens the normal product modal, so extras and quantity still get chosen. */
+  const handleSearchSelect = (item: MenuItem) => {
+    setSearchOpen(false);
+    setSelectedItem(item);
   };
 
   const openTrackedOrder = (orderId: string) => {
@@ -199,29 +257,28 @@ export default function App() {
       setMyOrderIds(prev => prev.filter(id => id !== activeOrder.id));
     }
     setTrackedOrderId(null);
-    setCurrentView('menu');
+    goToClientPage('menu');
   };
 
-  const handleSimulateProgress = () => {
-    if (!activeOrder) return;
-    const nextStatus = getNextStatus(activeOrder.type, activeOrder.status);
-    if (nextStatus) handleUpdateOrderStatus(activeOrder.id, nextStatus);
-  };
+  const showToast = useCallback((message: string) => setToast({ message, id: Date.now() }), []);
+
+  // The compact status card on the Map page only makes sense while someone is actually driving.
+  const orderOnTheWay = myOrders.find(order => order.status === 'Pe drum') ?? null;
 
   const handleToggleAvailability = (itemId: string) => {
-    setMenuItems(prev => prev.map(item =>
+    updateMenu(prev => prev.map(item =>
       item.id === itemId ? { ...item, available: !item.available } : item
     ));
   };
 
   const handleUpdateMenuItem = (updatedItem: MenuItem) => {
-    setMenuItems(prev => prev.map(item =>
+    updateMenu(prev => prev.map(item =>
       item.id === updatedItem.id ? updatedItem : item
     ));
   };
 
   const handleAddMenuItem = (newItem: MenuItem) => {
-    setMenuItems(prev => [...prev, newItem]);
+    updateMenu(prev => [...prev, newItem]);
   };
 
   return (
@@ -245,57 +302,11 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Top Admin Navigation */}
-      <AnimatePresence>
-        {currentView === 'menu' && (
-          <motion.div
-            key="admin-btn"
-            initial={{ opacity: 0, y: -20, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: -20, x: '-50%' }}
-            transition={{
-              type: "spring",
-              stiffness: 400,
-              damping: 30,
-              opacity: { duration: 0.15, ease: "easeOut" }
-            }}
-            className="fixed top-4 left-1/2 z-40 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-2xl border-[0.5px] border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-1.5 rounded-full whitespace-nowrap"
-          >
-            <button
-              onClick={() => setCurrentView('courier')}
-              title="Curier"
-              className="flex items-center justify-center gap-1.5 text-zinc-400 hover:text-white hover:bg-white/10 px-3 sm:px-4 py-2 min-h-[36px] rounded-full text-[10px] sm:text-xs uppercase tracking-wider font-semibold transition"
-            >
-              <Package size={16} />
-              <span className="hidden sm:inline-block">Curier</span>
-            </button>
-            <div className="w-[1px] h-4 bg-white/10" />
-            <button
-              onClick={() => setCurrentView('kitchen')}
-              title="Bucătărie (KDS)"
-              className="flex items-center justify-center gap-1.5 text-amber-500 hover:text-amber-400 hover:bg-amber-500/10 px-3 sm:px-4 py-2 min-h-[36px] rounded-full text-[10px] sm:text-xs uppercase tracking-wider font-semibold transition"
-            >
-              <ChefHat size={16} />
-              <span className="hidden sm:inline-block">Bucătărie</span>
-            </button>
-            <div className="w-[1px] h-4 bg-white/10" />
-            <button
-              onClick={() => setCurrentView('admin')}
-              title="Manager"
-              className="flex items-center justify-center gap-1.5 text-[#D4EAE6] hover:text-[#B8D6D1] hover:bg-[#D4EAE6]/10 px-3 sm:px-4 py-2 min-h-[36px] rounded-full text-[10px] sm:text-xs uppercase tracking-wider font-semibold transition"
-            >
-              <LayoutDashboard size={16} />
-              <span className="hidden sm:inline-block">Manager</span>
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Active Order Trackers: pinned under the staff nav, so the bottom stays free for the cart.
-          Shows every order placed from this browser until the customer has seen its outcome. */}
-      <div className="fixed top-[76px] inset-x-0 z-40 flex flex-col items-center gap-2 px-4 pointer-events-none">
+      {/* Active Order Trackers, pinned at the top of the Menu page. The Home page renders the same
+          trackers inline instead, so they can never cover its search button. */}
+      <div className={`fixed ${TRACKER_TOP} inset-x-0 z-40 flex flex-col items-center gap-2 px-4 pointer-events-none`}>
         <AnimatePresence>
-          {currentView === 'menu' && myOrders.map(order => (
+          {currentView === 'client' && clientPage === 'menu' && !selectedItem && myOrders.map(order => (
             <motion.div
               key={`track-${order.id}`}
               layout
@@ -315,25 +326,75 @@ export default function App() {
       </div>
 
       {/* Main Content Area */}
-      <main className="grid [grid-template-areas:'main'] relative min-h-[100svh]">
+      {/* One stacking cell for every screen. The column is pinned to minmax(0,1fr): left on `auto`, a
+          grid track grows to its content's max-content width, which the horizontal carousels would
+          blow far past the viewport, and overflow-x-hidden would then silently clip the rest. */}
+      <main className="grid grid-cols-[minmax(0,1fr)] [grid-template-areas:'main'] relative min-h-[100svh]">
         <AnimatePresence>
-          {currentView === 'menu' && (
+          {currentView === 'client' && (
             <motion.div
-              key="menu"
+              key="client"
               className="[grid-area:main] bg-zinc-900 w-full min-h-[100svh]"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30, opacity: { duration: 0.2, ease: "easeOut" } }}
-              style={{ overflow: currentView === 'menu' ? 'visible' : 'hidden', maxHeight: currentView === 'menu' ? 'none' : '100svh' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={PAGE_TRANSITION}
             >
-              <MenuScreen
-                menuItems={menuItems}
-                orderType={orderType}
-                setOrderType={setOrderType}
-                onSelectItem={setSelectedItem}
-                trackerCount={myOrders.length}
-              />
+              {/* The customer app's four tabs. Both pages are mounted for the length of the swap and
+                  share a single grid cell, so they cross-fade in place instead of stacking. That
+                  overlap is also what makes the scroll restore land: the outgoing page holds the
+                  document height up while the incoming one mounts, so scrolling back to a remembered
+                  offset is not clamped by a momentarily short page. */}
+              <div className="grid grid-cols-[minmax(0,1fr)] [grid-template-areas:'page']">
+                <AnimatePresence initial={false}>
+                  <motion.div
+                    key={clientPage}
+                    className="[grid-area:page] min-w-0"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={PAGE_TRANSITION}
+                  >
+                    <ScrollRestore top={scrollByPage.current.get(clientPage) ?? 0} />
+
+                    {clientPage === 'home' && (
+                      <HomeScreen
+                        menuItems={menuItems}
+                        orderType={orderType}
+                        setOrderType={setOrderType}
+                        onSelectItem={setSelectedItem}
+                        onOpenMenu={() => goToClientPage('menu')}
+                        onOpenCategory={openCategory}
+                        onOpenSearch={() => setSearchOpen(true)}
+                        selectedCategory={menuCategory}
+                        myOrders={myOrders}
+                        onOpenOrder={openTrackedOrder}
+                      />
+                    )}
+
+                    {clientPage === 'map' && (
+                      <CustomerMapScreen orderOnTheWay={orderOnTheWay} onOpenOrder={openTrackedOrder} />
+                    )}
+
+                    {clientPage === 'menu' && (
+                      <MenuScreen
+                        menuItems={menuItems}
+                        orderType={orderType}
+                        setOrderType={setOrderType}
+                        onSelectItem={setSelectedItem}
+                        trackerCount={myOrders.length}
+                        selectedCategory={menuCategory}
+                        scrollToCategory={categoryJump}
+                        onScrolledToCategory={handleScrolledToCategory}
+                      />
+                    )}
+
+                    {clientPage === 'profile' && (
+                      <ProfileScreen myOrders={myOrders} onOpenOrder={openTrackedOrder} onDemoAction={showToast} />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             </motion.div>
           )}
 
@@ -350,7 +411,7 @@ export default function App() {
                 cart={cart}
                 setCart={setCart}
                 orderType={orderType}
-                onBack={() => setCurrentView('menu')}
+                onBack={() => setCurrentView('client')}
                 onPlaceOrder={handlePlaceOrder}
               />
             </motion.div>
@@ -367,7 +428,6 @@ export default function App() {
             >
               <ConfirmationScreen
                 order={activeOrder}
-                onSimulateProgress={handleSimulateProgress}
                 onBackToMenu={handleLeaveConfirmation}
               />
             </motion.div>
@@ -386,11 +446,11 @@ export default function App() {
                 <AdminScreen
                   orders={orders}
                   menuItems={menuItems}
-                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  onUpdateOrderStatus={adminUpdateStatus}
                   onToggleItemAvailability={handleToggleAvailability}
                   onUpdateMenuItem={handleUpdateMenuItem}
                   onAddMenuItem={handleAddMenuItem}
-                  onBack={() => setCurrentView('menu')}
+                  onBack={() => goToClientPage('home')}
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
               ) : staffLogin('admin')}
@@ -408,8 +468,8 @@ export default function App() {
               {canOpen(staffRole, 'kitchen') ? (
                 <KitchenScreen
                   orders={orders}
-                  onUpdateOrderStatus={handleUpdateOrderStatus}
-                  onBack={() => setCurrentView('menu')}
+                  onUpdateOrderStatus={kitchenUpdateStatus}
+                  onBack={() => goToClientPage('home')}
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
               ) : staffLogin('kitchen')}
@@ -428,8 +488,8 @@ export default function App() {
               {canOpen(staffRole, 'courier') ? (
                 <CourierScreen
                   orders={orders}
-                  onUpdateOrderStatus={handleUpdateOrderStatus}
-                  onBack={() => setCurrentView('menu')}
+                  onUpdateOrderStatus={courierUpdateStatus}
+                  onBack={() => goToClientPage('home')}
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
               ) : staffLogin('courier')}
@@ -438,44 +498,19 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Floating Bottom Actions (Order Status & Cart) */}
-      <div className="fixed bottom-6 left-0 right-0 z-40 flex flex-col items-center gap-3 px-4 pointer-events-none pb-[env(safe-area-inset-bottom)]">
+      {/* The customer app's own navigation. Hidden behind the cart, checkout, tracking and staff
+          screens, and while a product modal is open, so it is never part of those flows. */}
+      {currentView === 'client' && !selectedItem && !searchOpen && (
+        <MobileBottomNav page={clientPage} cartCount={cartItemsCount} onNavigate={goToClientTab} />
+      )}
 
-        {/* Floating Cart Button */}
-        <AnimatePresence>
-          {currentView === 'menu' && cartItemsCount > 0 && (
-            <motion.div
-              key="floating-cart"
-              initial={{ opacity: 0, y: 30, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 30, scale: 0.9 }}
-              transition={{
-                type: "spring", stiffness: 400, damping: 30,
-                opacity: { duration: 0.15, ease: "easeOut" }
-              }}
-              className="w-full max-w-sm pointer-events-auto"
-            >
-              <button
-                onClick={() => {
-                  triggerVibration(20);
-                  setCurrentView('cart');
-                }}
-                className="flex items-center justify-between gap-4 bg-zinc-800/90 backdrop-blur-2xl border-[0.5px] border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.3)] text-white px-6 py-4 rounded-full hover:bg-zinc-700/90 transition active:scale-[0.98] w-full"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="bg-[#D4EAE6] text-zinc-900 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shadow-inner leading-none">
-                    {cartItemsCount}
-                  </div>
-                  <span className="font-semibold uppercase tracking-wider text-xs text-[#D4EAE6]">Vezi coșul</span>
-                </div>
-                <span className="font-sans font-semibold tracking-tight text-lg">
-                  {cartSubtotal(cart)} RON
-                </span>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* Search sits above the navbar but below the product modal, so a hit can open the modal
+          without losing the results underneath. */}
+      <AnimatePresence>
+        {searchOpen && (
+          <HomeSearch menuItems={menuItems} onSelectItem={handleSearchSelect} onClose={() => setSearchOpen(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Item Selection Modal */}
       <AnimatePresence>

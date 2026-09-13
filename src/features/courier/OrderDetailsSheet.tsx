@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Order } from '../../types';
 import { lineTotal } from '../../lib/pricing';
 import { formatTime } from '../../lib/format';
-import { shortOrderId } from './CourierOrderCard';
+import { shortOrderId } from '../../lib/format';
 
 interface Props {
   order: Order | null;

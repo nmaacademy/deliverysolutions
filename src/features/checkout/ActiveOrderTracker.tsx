@@ -1,7 +1,9 @@
 import { ChevronRight } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Order } from '../../types';
+import { shortOrderId } from '../../lib/format';
 import { FadeInImage } from '../../components/ui/FadeInImage';
-import { STATUS_ICONS, statusLabel, trackerSubtitle, trackerProgress, TRACKER_PHASE_COUNT } from './orderStatus';
+import { STATUS_ICONS, statusMessage, trackerSubtitle, trackerProgress, TRACKER_PHASE_COUNT } from './orderStatus';
 
 interface Props {
   order: Order;
@@ -13,14 +15,15 @@ export default function ActiveOrderTracker({ order, onOpen }: Props) {
   const refused = order.status === 'Refuzată';
   const progress = trackerProgress(order);
   const Icon = STATUS_ICONS[order.status];
-  const shortId = order.id.replace('ORD-', '');
+  const shortId = shortOrderId(order.id);
+  const message = statusMessage(order);
   const image = order.items[0]?.menuItem.image;
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Comanda #${shortId}: ${statusLabel(order)}. Vezi detalii`}
+      aria-label={`Comanda #${shortId}: ${message}. Vezi detalii`}
       className="w-full flex items-center gap-3 pl-2 pr-4 py-2 rounded-full text-left text-white bg-zinc-800/90 backdrop-blur-2xl border-[0.5px] border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,0,0,0.3)] hover:bg-zinc-700/90 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
     >
       <span className="relative shrink-0">
@@ -40,7 +43,21 @@ export default function ActiveOrderTracker({ order, onOpen }: Props) {
       </span>
 
       <span className="flex-1 min-w-0">
-        <span className="block text-[15px] font-semibold leading-tight truncate">{statusLabel(order)}</span>
+        {/* The headline swaps with a soft fade as the kitchen and the courier move the order along. */}
+        <span className="block relative h-[19px] overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={order.status}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="block text-[15px] font-semibold leading-tight truncate"
+            >
+              {message}
+            </motion.span>
+          </AnimatePresence>
+        </span>
         <span className={`block text-[12px] mt-0.5 truncate ${refused ? 'text-red-300' : 'text-zinc-400'}`}>{trackerSubtitle(order)}</span>
         {!refused && (
           <span aria-hidden className="mt-1.5 flex gap-1.5">

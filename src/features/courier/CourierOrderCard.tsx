@@ -1,16 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Phone, Navigation, ChevronRight, Clock, ArrowRight, Store, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Order, OrderStatus } from '../../types';
-import { getNextStatus } from '../../lib/orderFlow';
-import { minutesSince } from '../../lib/format';
+import { courierNextStatus } from '../../lib/orderFlow';
+import { minutesSince, shortOrderId } from '../../lib/format';
 import { distanceKm, formatKm } from '../../lib/geo';
 import { triggerVibration } from '../../lib/haptics';
 import { RESTAURANT_LOCATION } from '../../components/map/leafletDocument';
 import { RouteMiniMap, RouteInfo } from '../../components/map/RouteMiniMap';
 
 const STATUS_STYLE: Partial<Record<OrderStatus, { label: string; dot: string; text: string; live?: boolean }>> = {
-  'În preparare': { label: 'Se prepară', dot: 'bg-amber-400', text: 'text-amber-300' },
   'Gata de ridicare': { label: 'Gata de ridicare', dot: 'bg-[#D4EAE6]', text: 'text-[#D4EAE6]' },
   'Preluată de curier': { label: 'Preluată', dot: 'bg-sky-400', text: 'text-sky-300' },
   'Pe drum': { label: 'Pe drum', dot: 'bg-[#D4EAE6]', text: 'text-[#D4EAE6]', live: true },
@@ -19,10 +18,8 @@ const STATUS_STYLE: Partial<Record<OrderStatus, { label: string; dot: string; te
 const SPLIT_PILL_HALF =
   'flex-1 h-full inline-flex items-center justify-center gap-2 text-[14px] font-medium text-zinc-100 hover:bg-white/[0.06] active:bg-white/[0.1] transition-colors focus-visible:outline-none focus-visible:bg-white/[0.1]';
 
-export const shortOrderId = (id: string) => id.replace('ORD-', '');
-
 const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
-  'Gata de ridicare': 'Preia comanda',
+  'Gata de ridicare': 'Acceptă cursa',
   'Preluată de curier': 'Pornește spre client',
   'Pe drum': 'Confirmă livrarea',
 };
@@ -40,18 +37,24 @@ interface Props {
   index: number;
   /** Active runs get the route map and quick contact actions. */
   isActiveRun: boolean;
+  /** Flashes the card for a few seconds when the run has just become available. */
+  isNew?: boolean;
   onOpen: (order: Order) => void;
   onAdvance: (orderId: string, status: OrderStatus) => void;
 }
 
-export default function CourierOrderCard({ order, index, isActiveRun, onOpen, onAdvance }: Props) {
+export default function CourierOrderCard({ order, index, isActiveRun, isNew = false, onOpen, onAdvance }: Props) {
   const status = STATUS_STYLE[order.status];
-  const nextStatus = getNextStatus(order.type, order.status);
+  // Only the one step the courier may take from here: no skipping ahead, no going back.
+  const nextStatus = courierNextStatus(order);
   const actionLabel = ACTION_LABEL[order.status];
   const elapsed = minutesSince(order.createdAt);
   const itemCount = order.items.reduce((n, item) => n + item.quantity, 0);
   const distance = order.coordinates ? distanceKm(RESTAURANT_LOCATION, order.coordinates) : null;
   const [route, setRoute] = useState<RouteInfo | null>(null);
+  // Guard against a double tap: re-armed only once the order actually moved on.
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setBusy(false), [order.status]);
 
   return (
     <motion.article
@@ -60,7 +63,11 @@ export default function CourierOrderCard({ order, index, isActiveRun, onOpen, on
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97 }}
       transition={{ duration: 0.25, delay: index * 0.04, ease: 'easeOut' }}
-      className="rounded-[32px] bg-white/[0.07] backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.35)] overflow-hidden"
+      className={`rounded-[32px] bg-white/[0.07] backdrop-blur-2xl border overflow-hidden transition-colors ${
+        isNew
+          ? 'border-[#D4EAE6]/40 shadow-[0_8px_32px_rgba(0,0,0,0.35),0_0_48px_-12px_rgba(212,234,230,0.45)]'
+          : 'border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.35)]'
+      }`}
     >
       {/* Summary: tap for full order details */}
       <button
@@ -169,19 +176,22 @@ export default function CourierOrderCard({ order, index, isActiveRun, onOpen, on
           <motion.button
             type="button"
             whileTap={{ scale: 0.98 }}
+            disabled={busy}
             onClick={() => {
+              if (busy) return;
+              setBusy(true);
               triggerVibration(20);
               onAdvance(order.id, nextStatus);
             }}
-            className="w-full h-[52px] rounded-full bg-[#D4EAE6] hover:bg-[#c5dfda] shadow-[0_4px_20px_rgba(212,234,230,0.18)] text-zinc-900 text-[15px] font-semibold inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+            className="w-full h-[52px] rounded-full bg-[#D4EAE6] hover:bg-[#c5dfda] shadow-[0_4px_20px_rgba(212,234,230,0.18)] text-zinc-900 text-[15px] font-semibold inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {actionLabel}
             <ArrowRight size={18} />
           </motion.button>
         ) : (
           <div role="status" className="w-full h-[52px] rounded-full bg-white/[0.04] border border-white/[0.06] text-zinc-400 text-[14px] font-medium inline-flex items-center justify-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse motion-reduce:animate-none" />
-            Se prepară în bucătărie
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D4EAE6]" />
+            Cursă finalizată
           </div>
         )}
       </div>

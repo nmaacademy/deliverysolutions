@@ -19,6 +19,25 @@ export const STATUS_ICONS: Record<OrderStatus, LucideIcon> = {
 export const statusLabel = (order: Order, status: OrderStatus = order.status) =>
   order.type === 'livrare' && status === 'Gata de ridicare' ? 'Așteaptă curierul' : status;
 
+// The one place the customer-facing sentence per status is written. Both the compact tracker and the
+// full tracking page read it from here, so they can never drift apart.
+const STATUS_MESSAGES: Record<OrderStatus, string> = {
+  'Comandă primită': 'Comanda a fost trimisă bucătăriei',
+  'În preparare': 'Bucătăria îți pregătește comanda',
+  'Gata de ridicare': 'Comanda este gata. Căutăm un curier',
+  'Preluată de curier': 'Curierul a acceptat comanda',
+  'Pe drum': 'Curierul este în drum spre tine',
+  'Livrată': 'Comanda a fost livrată',
+  'Ridicată': 'Comanda a fost ridicată',
+  'Refuzată': 'Restaurantul a refuzat comanda',
+};
+
+/** What the customer reads for the order's current status. */
+export function statusMessage(order: Order, status: OrderStatus = order.status) {
+  if (order.type === 'ridicare' && status === 'Gata de ridicare') return 'Comanda ta este gata de ridicare';
+  return STATUS_MESSAGES[status];
+}
+
 /** Delivered, picked up or refused: nothing left to wait for. */
 export function isFinished(order: Order) {
   const steps = ORDER_STEPS[order.type];

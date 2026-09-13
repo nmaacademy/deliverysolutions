@@ -16,6 +16,12 @@
   }
 }
 
+:root {
+  /* Footprint of the fixed customer navbar: pill height + its bottom offset + the iPhone safe area.
+     Customer pages pad their bottom by this, and the floating cart sits just above it. */
+  --client-nav-space: calc(76px + env(safe-area-inset-bottom));
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;

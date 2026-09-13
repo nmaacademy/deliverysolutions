@@ -3,8 +3,10 @@ import { ChevronLeft, CheckCircle2, ArrowRight, X, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Order, OrderStatus } from '../../types';
 import { formatTime } from '../../lib/format';
-import { getNextStatus } from '../../lib/orderFlow';
+import { kitchenNextStatus } from '../../lib/orderFlow';
 import OrderCard from '../../components/orders/OrderCard';
+import NotificationStack from '../notifications/NotificationStack';
+import { useOrderAlerts } from '../notifications/useOrderAlerts';
 
 interface Props {
   orders: Order[];
@@ -26,7 +28,7 @@ function useNow(intervalMs: number) {
 
 const oldestFirst = (a: Order, b: Order) => a.createdAt.getTime() - b.createdAt.getTime();
 
-const PILL = 'h-[52px] rounded-full text-sm font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900';
+const PILL = 'h-[52px] rounded-full text-sm font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 disabled:opacity-60 disabled:cursor-not-allowed';
 
 /**
  * New tickets can be refused from a small secondary button. Refusing takes a second tap on the
@@ -34,12 +36,21 @@ const PILL = 'h-[52px] rounded-full text-sm font-bold uppercase tracking-wider i
  */
 function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdvance: () => void; onRefuse: () => void }) {
   const [confirming, setConfirming] = useState(false);
+  // A tap is only armed once: the card leaves this column as soon as the status changes, and until
+  // then a second tap would be an accidental double click.
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!confirming) return;
     const id = setTimeout(() => setConfirming(false), 5000);
     return () => clearTimeout(id);
   }, [confirming]);
+
+  const once = (action: () => void) => () => {
+    if (busy) return;
+    setBusy(true);
+    action();
+  };
 
   if (confirming) {
     return (
@@ -50,7 +61,8 @@ function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdva
         <motion.button
           type="button"
           whileTap={{ scale: 0.98 }}
-          onClick={onRefuse}
+          disabled={busy}
+          onClick={once(onRefuse)}
           className={`${PILL} flex-[1.5] px-4 bg-red-500 text-white hover:bg-red-400 focus-visible:ring-red-400`}
         >
           Refuză comanda
@@ -75,7 +87,8 @@ function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdva
       <motion.button
         type="button"
         whileTap={{ scale: 0.98 }}
-        onClick={onAdvance}
+        disabled={busy}
+        onClick={once(onAdvance)}
         className={`${PILL} flex-1 ${
           isNew
             ? 'bg-amber-400 text-amber-950 hover:bg-amber-300 shadow-[0_4px_20px_rgba(251,191,36,0.2)] focus-visible:ring-amber-400'
@@ -84,13 +97,13 @@ function KitchenActions({ isNew, onAdvance, onRefuse }: { isNew: boolean; onAdva
       >
         {isNew ? (
           <>
-            Începe prepararea
+            Acceptă și începe prepararea
             <ArrowRight size={18} />
           </>
         ) : (
           <>
             <CheckCircle2 size={18} />
-            Marchează gata
+            Comanda este gata
           </>
         )}
       </motion.button>
@@ -118,14 +131,28 @@ function Column({ title, count, empty, children }: { title: string; count: numbe
 
 export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onLogout }: Props) {
   const now = useNow(30_000);
+  const { notifications, dismiss, highlightedIds } = useOrderAlerts(orders, 'kitchen');
   const newOrders = orders.filter(o => o.status === 'Comandă primită').sort(oldestFirst);
   const cooking = orders.filter(o => o.status === 'În preparare').sort(oldestFirst);
 
   const renderCard = (order: Order, index: number) => {
     const isNew = order.status === 'Comandă primită';
-    const nextStatus = getNextStatus(order.type, order.status);
+    // Only the step the kitchen is allowed to take, so a card can never skip ahead in the flow.
+    const nextStatus = kitchenNextStatus(order);
+    const justArrived = highlightedIds.includes(order.id);
+
     return (
-      <motion.div layout key={order.id}>
+      <motion.div
+        layout
+        key={order.id}
+        animate={
+          justArrived
+            ? { boxShadow: ['0 0 0 0 rgba(251,191,36,0)', '0 0 0 3px rgba(251,191,36,0.45)', '0 0 0 0 rgba(251,191,36,0)'] }
+            : { boxShadow: '0 0 0 0 rgba(251,191,36,0)' }
+        }
+        transition={justArrived ? { duration: 1.6, repeat: 2, ease: 'easeInOut' } : { duration: 0.3 }}
+        className="rounded-[32px]"
+      >
         <OrderCard
           order={order}
           variant={isNew ? 'highlighted' : 'default'}
@@ -149,6 +176,8 @@ export default function KitchenScreen({ orders, onUpdateOrderStatus, onBack, onL
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(70%_45%_at_10%_0%,rgba(212,234,230,0.16),transparent_70%),radial-gradient(60%_40%_at_100%_60%,rgba(251,191,36,0.08),transparent_70%)]"
       />
+
+      <NotificationStack notifications={notifications} onDismiss={dismiss} />
 
       <header className="sticky top-0 z-30 bg-zinc-950/70 backdrop-blur-2xl border-b border-white/[0.06] px-4 sm:px-6 pt-[calc(env(safe-area-inset-top)+20px)] pb-4">
         <div className="max-w-7xl mx-auto flex items-center gap-3">

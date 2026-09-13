@@ -53,7 +53,9 @@ export default function ProductModal({ item, categories, onSave, onClose }: Prop
       image,
       stock: Number(stock),
       available: available, // Manual toggle override
-      extras: item ? item.extras : []
+      extras: item ? item.extras : [],
+      // Not editable here; carried through so an edit does not wipe the product page's prep time.
+      prepTimeMinutes: item?.prepTimeMinutes
     });
     onClose();
   };
