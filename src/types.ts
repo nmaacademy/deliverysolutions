@@ -39,6 +39,11 @@ export interface MenuItem {
   extras?: Extra[];
   /** Estimated prep time in minutes. Missing values fall back to a fixed demo value. */
   prepTimeMinutes?: number;
+  /**
+   * Featured in "Meniul zilei" on the Home page, picked by the manager. Missing means the product
+   * predates the flag, so it falls back to the original hardcoded selection; see `isDailyMenuItem`.
+   */
+  isDailyMenu?: boolean;
 }
 
 export interface CartItem {

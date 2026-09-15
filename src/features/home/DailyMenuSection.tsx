@@ -5,7 +5,7 @@ import { revealOnView, riseItem, staggerGroup } from '../../lib/motion';
 import { MenuItem } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
 import { FadeInImage } from '../../components/ui/FadeInImage';
-import { DAILY_MENU_IDS, resolveShowcase, showcaseMeta } from '../../data/home';
+import { dailyMenuItems, showcaseMeta } from '../../data/home';
 import SectionHeader from './SectionHeader';
 
 interface Props {
@@ -14,15 +14,16 @@ interface Props {
   onSeeAll: () => void;
 }
 
-const COUNT = 4;
-
 /**
  * Today's picks as large cards: a round photo, the name, two lines of description and a footer with
  * the prep time and the price. One and a bit cards fit on a phone, so the row invites a swipe; on a
  * wide screen the same cards lay out as a grid instead.
+ *
+ * The manager picks these, so the count is whatever it is: the phone row scrolls and the desktop
+ * grid wraps onto a second line past four.
  */
 export default function DailyMenuSection({ menuItems, onSelectItem, onSeeAll }: Props) {
-  const items = useMemo(() => resolveShowcase(menuItems, DAILY_MENU_IDS, COUNT), [menuItems]);
+  const items = useMemo(() => dailyMenuItems(menuItems), [menuItems]);
 
   if (items.length === 0) return null;
 

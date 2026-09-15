@@ -4,7 +4,7 @@ import { EASE_OUT, revealOnMount, revealOnView, riseItem, staggerGroup } from '.
 import { Plus } from 'lucide-react';
 import { MenuItem, OrderType } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
-import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import ClientHeaderControls from '../../components/navigation/ClientHeaderControls';
 import { FadeInImage } from '../../components/ui/FadeInImage';
 import { CLIENT_PAGE_BOTTOM, clientTopPadding } from '../client/layout';
 
@@ -13,6 +13,8 @@ interface Props {
   orderType: OrderType;
   setOrderType: (type: OrderType) => void;
   onSelectItem: (item: MenuItem) => void;
+  /** Opens the one global search sheet, the same one the Home header opens. */
+  onOpenSearch: () => void;
   /** Order trackers pinned above the page; the header starts below them. */
   trackerCount?: number;
   /** The category currently marked, shared with the Home carousel. Highlighting only. */
@@ -39,6 +41,7 @@ function MenuScreen({
   orderType,
   setOrderType,
   onSelectItem,
+  onOpenSearch,
   trackerCount = 0,
   selectedCategory = null,
   scrollToCategory = null,
@@ -57,29 +60,13 @@ function MenuScreen({
 
   return (
     <div className={CLIENT_PAGE_BOTTOM} style={{ paddingTop: clientTopPadding(trackerCount) }}>
-      {/* Header: the big hero now lives on the Home page, so the menu starts with the essentials. */}
+      {/* The same compact header the Home page opens with, so the two tabs read as one app. */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h1 className="text-[28px] sm:text-[32px] font-sans font-semibold tracking-tight text-white mb-1">Meniu</h1>
-        <p className="text-[13px] text-zinc-400 mb-5">Apasă un produs pentru a-l personaliza.</p>
-
-        <div className="w-full max-w-[280px] sm:max-w-[320px] relative">
-          <SegmentedControl
-            id="order-type"
-            value={orderType}
-            onChange={(val) => {
-              triggerVibration(15);
-              setOrderType(val as OrderType);
-            }}
-            options={[
-              { label: 'Livrare', value: 'livrare' },
-              { label: 'Ridicare', value: 'ridicare' }
-            ]}
-          />
-        </div>
+        <ClientHeaderControls orderType={orderType} setOrderType={setOrderType} onOpenSearch={onOpenSearch} />
 
         {/* Quick access to a category. Buttons, not #anchors, so the page URL stays clean. */}
         {categories.length > 1 && (
-          <nav aria-label="Categorii" className="mt-5 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 overflow-x-auto no-scrollbar">
+          <nav aria-label="Categorii" className="mt-8 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 overflow-x-auto no-scrollbar">
             <motion.ul variants={staggerGroup(0.02, 0)} {...revealOnMount} className="flex gap-2 w-max">
               {categories.map(category => (
                 <motion.li key={category} variants={riseItem}>
@@ -105,63 +92,64 @@ function MenuScreen({
       </div>
 
       {/* Menu Categories */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-12">
         {categories.map(category => {
           const items = menuItems.filter(i => i.category === category);
           if (items.length === 0) return null;
 
           return (
-            <div key={category} id={categoryId(category)} className="mb-20 scroll-mt-[96px]">
-              <motion.div {...revealOnView} className="flex items-center gap-6 mb-12">
+            <div key={category} id={categoryId(category)} className="mb-12 sm:mb-16 lg:mb-20 scroll-mt-[96px]">
+              <motion.div {...revealOnView} className="flex items-center gap-4 sm:gap-6 mb-6 sm:mb-10">
                 <motion.div variants={DIVIDER} className="flex-1 h-px bg-zinc-700/60 origin-right" />
-                <motion.h2 variants={riseItem} className="text-3xl font-sans font-semibold tracking-tight text-white text-center">{category}</motion.h2>
+                <motion.h2 variants={riseItem} className="text-2xl sm:text-3xl font-sans font-semibold tracking-tight text-white text-center">{category}</motion.h2>
                 <motion.div variants={DIVIDER} className="flex-1 h-px bg-zinc-700/60 origin-left" />
               </motion.div>
-              
-              {/* Cards come in one after another as the category scrolls into view. */}
-              <motion.div variants={staggerGroup(0.05, 0)} {...revealOnView} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+
+              {/* Two cards per row on a phone, more as the screen grows. Cards come in one after
+                  another as the category scrolls into view. */}
+              <motion.div variants={staggerGroup(0.05, 0)} {...revealOnView} className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-5 lg:gap-6">
                 {items.map(item => (
-                  <motion.div
+                  <motion.button
                     variants={riseItem}
                     key={item.id}
+                    type="button"
+                    disabled={!item.available}
                     onClick={() => {
-                      if (item.available) {
-                        triggerVibration(10);
-                        onSelectItem(item);
-                      }
+                      triggerVibration(10);
+                      onSelectItem(item);
                     }}
                     // Press feedback through the CSS `scale` property: it composes with the entrance
                     // transform, which would otherwise take precedence over a Motion whileTap scale.
-                    className={`group flex flex-col gap-4 p-2 bg-white/[0.05] glass-edge rounded-card cursor-pointer transition-[background-color,scale] duration-150 ease-out active:scale-[0.98] ${!item.available ? 'opacity-40 grayscale' : 'hover:bg-white/[0.09]'}`}
+                    className={`group w-full min-w-0 text-left flex flex-col p-1.5 sm:p-2 bg-white/[0.05] glass-edge rounded-card transition-[background-color,scale] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900 ${
+                      !item.available ? 'opacity-40 grayscale cursor-default' : 'cursor-pointer hover:bg-white/[0.09] active:scale-[0.98]'
+                    }`}
                   >
-                    <div className="w-full h-48 sm:h-64 shrink-0 rounded-tile overflow-hidden bg-zinc-800 relative">
+                    <div className="w-full aspect-square shrink-0 rounded-tile overflow-hidden bg-zinc-800 relative">
                       <FadeInImage src={item.image} alt={item.name} className="w-full h-full" />
                       {!item.available && (
-                        <div className="absolute inset-0 bg-zinc-900/40 flex items-center justify-center backdrop-blur-[2px]">
-                          <span className="bg-zinc-900/80 text-white px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider">Indisponibil</span>
+                        <div className="absolute inset-0 bg-zinc-900/40 flex items-center justify-center backdrop-blur-[2px] px-2">
+                          <span className="bg-zinc-900/80 text-white px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-center">Indisponibil</span>
                         </div>
                       )}
                     </div>
-                    
-                    <div className="flex-1 flex flex-col px-3 pb-3">
-                      <div className="flex justify-between items-baseline mb-2">
-                        <h3 className="text-xl sm:text-2xl font-sans font-semibold tracking-tight text-white group-hover:text-[#D4EAE6] transition-colors leading-tight">{item.name}</h3>
-                        <span className="text-[#D4EAE6] font-medium whitespace-nowrap ml-4 text-lg">{item.price} RON</span>
-                      </div>
-                      <p className="text-sm text-zinc-300 leading-relaxed line-clamp-2">{item.description}</p>
-                      
-                      <div className="mt-4 pt-4 border-t border-zinc-700/40 flex justify-between items-center">
-                        <span className="text-xs uppercase tracking-[0.15em] font-semibold text-zinc-400 group-hover:text-[#D4EAE6] transition-colors">
-                          {item.available ? 'Apasă pentru a personaliza' : 'Stoc epuizat'}
-                        </span>
+
+                    {/* Name, description and price stack: at two columns on a 320px screen there is no
+                        room to set the price beside the title without one of the two being cut. */}
+                    <div className="flex-1 flex flex-col min-w-0 px-1.5 sm:px-2 pt-2.5 pb-1.5 sm:pb-2">
+                      <h3 className="text-[15px] sm:text-[17px] lg:text-xl font-sans font-semibold tracking-tight text-white group-hover:text-[#D4EAE6] transition-colors leading-snug line-clamp-2">{item.name}</h3>
+                      <p className="mt-1 text-[12px] sm:text-[13px] text-zinc-300 leading-snug line-clamp-2">{item.description}</p>
+
+                      <div className="mt-auto pt-2.5 flex items-center justify-between gap-2">
+                        <span className="min-w-0 text-[#D4EAE6] font-medium text-[14px] sm:text-[15px] tabular-nums whitespace-nowrap">{item.price} RON</span>
                         {item.available && (
-                          <div className="w-8 h-8 rounded-full bg-[#D4EAE6]/10 flex items-center justify-center text-[#D4EAE6] group-hover:bg-[#D4EAE6] group-hover:text-zinc-900 transition-colors">
-                            <Plus size={18} strokeWidth={2.5} />
-                          </div>
+                          // Decorative: the whole card is the button, so this must not be a second one.
+                          <span aria-hidden className="shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#D4EAE6]/10 grid place-items-center text-[#D4EAE6] group-hover:bg-[#D4EAE6] group-hover:text-zinc-900 transition-colors">
+                            <Plus size={16} strokeWidth={2.5} />
+                          </span>
                         )}
                       </div>
                     </div>
-                  </motion.div>
+                  </motion.button>
                 ))}
               </motion.div>
             </div>

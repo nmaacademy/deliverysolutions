@@ -61,8 +61,34 @@ export function categoryImage(menuItems: MenuItem[], category: HomeCategory) {
   return product?.image ?? category.image;
 }
 
-/** Products featured in "Meniul zilei", by id. Missing or sold-out ids are skipped, never fatal. */
+/**
+ * The original "Meniul zilei" selection, by id. It is now only the default: the manager owns the
+ * selection through `MenuItem.isDailyMenu`, and this list answers for products saved before that
+ * flag existed.
+ */
 export const DAILY_MENU_IDS = ['m4', 'm13', 'm6', 'm5'];
+
+/**
+ * The single rule for "is this product in Meniul zilei".
+ *
+ * The flag lives on the product, so a manager's choice rides the normal menu sync (localStorage →
+ * Supabase → Realtime). `undefined` means the product was stored before the flag existed and keeps
+ * the original selection; an explicit `false` always wins, so a default product removed in the
+ * manager does not come back after a refresh.
+ */
+export function isDailyMenuItem(item: MenuItem): boolean {
+  return item.isDailyMenu ?? DAILY_MENU_IDS.includes(item.id);
+}
+
+/**
+ * The products "Meniul zilei" shows: every selected one that is on sale, in menu order.
+ *
+ * Unlike `resolveShowcase` this never tops the list up with products the manager did not pick, and
+ * never trims it: a sold-out pick simply drops out until it is available again.
+ */
+export function dailyMenuItems(menuItems: MenuItem[]): MenuItem[] {
+  return menuItems.filter(item => item.available && isDailyMenuItem(item));
+}
 
 /** Products featured in "Preparate apreciate", by id. */
 export const POPULAR_IDS = ['m1', 'm15', 'm8', 'm9'];
@@ -98,6 +124,64 @@ export function showcaseMeta(item: MenuItem): ShowcaseMeta {
     rating: FALLBACK_RATINGS[seed % FALLBACK_RATINGS.length],
     prepMinutes: FALLBACK_MINUTES[seed % FALLBACK_MINUTES.length],
   };
+}
+
+/**
+ * "Oferte speciale": three products dressed up as restaurant ads at the end of the Home page.
+ *
+ * The config never carries a price. The card shows the product's own price, so the advert, the
+ * product page and the cart can never disagree — this prototype has no discount pipeline behind it.
+ */
+export interface SpecialOffer {
+  id: string;
+  /** The product the card advertises and opens. */
+  itemId: string;
+  /** Advertising headline. Kept to a few words: it is set large and wraps onto two lines. */
+  title: string;
+  /** One short line under the headline. */
+  description: string;
+  /** Small pill above the headline, e.g. "Specialitatea casei". */
+  kicker: string;
+}
+
+export const SPECIAL_OFFERS: SpecialOffer[] = [
+  {
+    id: 'vita',
+    itemId: 'm4',
+    title: 'Vită fragedă la grătar',
+    description: 'Sos demiglace și piure de trufe negre.',
+    kicker: 'Specialitatea casei',
+  },
+  {
+    id: 'caesar',
+    itemId: 'm15',
+    title: 'Caesar cu pui crocant',
+    description: 'Parmezan ras și dressing clasic de casă.',
+    kicker: 'Prânz ușor',
+  },
+  {
+    id: 'lava',
+    itemId: 'm8',
+    title: 'Lava cake cu ciocolată',
+    description: 'Înghețată de vanilie de Madagascar.',
+    kicker: 'Dulcele final',
+  },
+];
+
+/** An offer with the product it advertises already looked up. */
+export interface ResolvedOffer extends SpecialOffer {
+  item: MenuItem;
+}
+
+/**
+ * The offers that can actually be ordered right now. An id the manager deleted, or a product that
+ * sold out, simply drops out of the section instead of advertising something unavailable.
+ */
+export function specialOffers(menuItems: MenuItem[]): ResolvedOffer[] {
+  return SPECIAL_OFFERS.flatMap(offer => {
+    const item = menuItems.find(candidate => candidate.id === offer.itemId);
+    return item && item.available ? [{ ...offer, item }] : [];
+  });
 }
 
 /**

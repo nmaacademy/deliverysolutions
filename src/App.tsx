@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Check } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { initialMenu, mockOrders } from './data/mock';
 import { MenuItem, Order, CartItem, OrderActor, OrderType, OrderStatus, Extra } from './types';
 import { triggerVibration } from './lib/haptics';
@@ -14,7 +14,7 @@ import ScreenLayer from './features/client/ScreenLayer';
 import TopEdgeFade from './features/client/TopEdgeFade';
 import { SheetBackdrop } from './components/ui/SheetBackdrop';
 import { TRACKER_TOP } from './features/client/layout';
-import { ENTER, EXIT, SHEET_ENTER, SHEET_EXIT } from './lib/motion';
+import { EASE_OUT, ENTER, EXIT, SHEET_ENTER, SHEET_EXIT } from './lib/motion';
 import HomeScreen from './features/home/HomeScreen';
 import HomeSearch from './features/home/HomeSearch';
 import CustomerMapScreen from './features/map/CustomerMapScreen';
@@ -25,6 +25,8 @@ import CartScreen from './features/checkout/CartScreen';
 import ConfirmationScreen from './features/checkout/ConfirmationScreen';
 import ActiveOrderTracker from './features/checkout/ActiveOrderTracker';
 import { isFinished } from './features/checkout/orderStatus';
+import SiteIntro from './features/intro/SiteIntro';
+import { markIntroSeen, shouldPlayIntro } from './features/intro/introSession';
 import AdminScreen from './features/admin/AdminScreen';
 import KitchenScreen from './features/kitchen/KitchenScreen';
 import CourierScreen from './features/courier/CourierScreen';
@@ -46,6 +48,26 @@ const APP_RECEDED = { opacity: 0.4, transform: 'scale(0.94)' };
 // The transform is dropped once the app is back, or it would become the containing block of fixed elements.
 const APP_PRESENT = { opacity: 1, transform: 'scale(1)', transitionEnd: { transform: 'none' } };
 
+/**
+ * How the site comes out from behind the opening clip: it settles forward into focus while the
+ * overlay fades, so the two read as one movement rather than a cut.
+ *
+ * Both the transform and the filter are dropped on arrival. Left in place they would make this
+ * element the containing block for every `position: fixed` child — the navbar, the toast, the order
+ * trackers — and pin them to the app instead of the viewport.
+ */
+const SITE_HIDDEN = { opacity: 0, filter: 'blur(6px)', transform: 'translateY(6px) scale(0.985)' };
+const SITE_SHOWN = {
+  opacity: 1,
+  filter: 'blur(0px)',
+  transform: 'translateY(0px) scale(1)',
+  transitionEnd: { transform: 'none', filter: 'none' },
+};
+/** Reduced motion gets the same handover with nothing moving or blurring. */
+const SITE_HIDDEN_PLAIN = { opacity: 0 };
+const SITE_SHOWN_PLAIN = { opacity: 1 };
+const SITE_REVEAL = { duration: 0.7, ease: EASE_OUT };
+
 /** Tab order along the navbar, so a page change knows which way to slide. */
 const CLIENT_PAGE_ORDER: ClientPage[] = ['home', 'map', 'menu', 'profile'];
 
@@ -60,6 +82,15 @@ function countByMenuItem(items: CartItem[]) {
 
 export default function App() {
   const [initialRoute] = useState(routeFromUrl);
+  /**
+   * Decided once, from the route this tab opened on: 'playing' while the clip is up, 'revealing'
+   * once it has handed over, 'off' when there was never an intro to begin with (a staff screen, or
+   * a tab that has already seen it). The app renders behind it the whole time, so the menu, the
+   * orders and the photos are already loading while the clip runs.
+   */
+  const [introPhase, setIntroPhase] = useState<'playing' | 'revealing' | 'off'>(() =>
+    shouldPlayIntro(initialRoute) ? 'playing' : 'off',
+  );
   const [currentView, setCurrentView] = useState<ViewState>(initialRoute.staff ?? 'client');
   const [clientPage, setClientPage] = useState<ClientPage>(initialRoute.page);
   // Each customer page remembers where it was scrolled to; a page never visited starts at the top.
@@ -323,8 +354,70 @@ export default function App() {
     updateMenu(prev => [...prev, newItem]);
   };
 
+  /**
+   * "Meniul zilei" is a flag on the product, so it persists through the same path as stock and
+   * availability: localStorage first, then Supabase and Realtime when they are configured.
+   */
+  const handleToggleDailyMenu = (itemId: string, isDailyMenu: boolean) => {
+    updateMenu(prev => prev.map(item =>
+      item.id === itemId ? { ...item, isDailyMenu } : item
+    ));
+  };
+
+  /**
+   * The clip is over, or the visitor left it early. `SiteIntro` calls this exactly once, so the tab
+   * is marked here rather than when the intro mounts: a reload part way through still gets it.
+   */
+  const handleIntroComplete = useCallback(() => {
+    markIntroSeen();
+    setIntroPhase('revealing');
+  }, []);
+
+  /** The reveal has landed: the shell goes back to being a plain, full-height, scrolling page. */
+  const endReveal = useCallback(() => {
+    setIntroPhase(phase => (phase === 'revealing' ? 'off' : phase));
+  }, []);
+
+  /**
+   * Backstop for `onAnimationComplete`. The shell is held at viewport height while it is revealed
+   * (see `introHolds`), so a callback that never arrived would leave the page unable to scroll.
+   */
+  useEffect(() => {
+    if (introPhase !== 'revealing') return;
+    const timer = window.setTimeout(endReveal, 1500);
+    return () => window.clearTimeout(timer);
+  }, [introPhase, endReveal]);
+
+  const reducedMotion = useReducedMotion();
+  const introRunning = introPhase === 'playing';
+  /**
+   * While the shell carries a transform or a filter it becomes the containing block for its own
+   * `position: fixed` children, and the navbar and order trackers would anchor to the bottom of the
+   * whole scrolling page instead of the viewport — visibly snapping into place when the reveal ends.
+   * Holding the shell at exactly one viewport keeps them where they belong. Nothing is lost: the
+   * page is pinned at the top throughout, so the clipped part is off screen anyway.
+   */
+  const introHolds = introPhase !== 'off';
+  const [siteHidden, siteShown] = reducedMotion
+    ? [SITE_HIDDEN_PLAIN, SITE_SHOWN_PLAIN]
+    : [SITE_HIDDEN, SITE_SHOWN];
+
   return (
-    <div className="min-h-[100svh] w-full overflow-x-clip bg-zinc-900 font-sans text-zinc-100">
+    <>
+    {/* The app itself. It is never unmounted for the intro: the clip plays over it while everything
+        behind carries on loading, and the reveal only changes how this element is painted. With no
+        intro ('off') no animation props are passed at all, so the shell stays a plain container. */}
+    <motion.div
+      className={`min-h-[100svh] w-full overflow-x-clip bg-zinc-900 font-sans text-zinc-100 ${introHolds ? 'h-[100svh] overflow-hidden' : ''}`}
+      onAnimationComplete={endReveal}
+      /* Takes the whole app out of the tab order and out of reach of a tap while the clip is up, so
+         the skip control is the first thing a keyboard lands on. `inert` does this without hiding
+         anything, which `display: none` would — and that would throw away the loading going on. */
+      inert={introRunning}
+      initial={introPhase === 'off' ? false : siteHidden}
+      animate={introPhase === 'revealing' ? siteShown : introPhase === 'playing' ? siteHidden : undefined}
+      transition={SITE_REVEAL}
+    >
 
       {/* The soft edge where the page slides under the top of the screen. */}
       {currentView === 'client' && <TopEdgeFade />}
@@ -418,6 +511,7 @@ export default function App() {
                       orderType={orderType}
                       setOrderType={setOrderType}
                       onSelectItem={setSelectedItem}
+                      onOpenSearch={openSearch}
                       trackerCount={myOrders.length}
                       selectedCategory={menuCategory}
                       scrollToCategory={categoryJump}
@@ -498,6 +592,7 @@ export default function App() {
                   onToggleItemAvailability={handleToggleAvailability}
                   onUpdateMenuItem={handleUpdateMenuItem}
                   onAddMenuItem={handleAddMenuItem}
+                  onToggleDailyMenu={handleToggleDailyMenu}
                   onBack={() => goToClientPage('home')}
                   onLogout={STAFF_AUTH_ENABLED ? handleStaffLogout : undefined}
                 />
@@ -574,6 +669,14 @@ export default function App() {
         )}
       </AnimatePresence>
 
-    </div>
+    </motion.div>
+
+    {/* Outside the app container, so the overlay does not fade along with what it is revealing.
+        AnimatePresence keeps it mounted through its exit, which is also what keeps the page pinned
+        until the handover is really finished. */}
+    <AnimatePresence>
+      {introRunning && <SiteIntro key="site-intro" onComplete={handleIntroComplete} />}
+    </AnimatePresence>
+    </>
   );
 }

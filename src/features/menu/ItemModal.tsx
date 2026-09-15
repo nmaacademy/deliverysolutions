@@ -292,7 +292,9 @@ export default function ItemModal({ item, onClose, onAdd }: Props) {
             <motion.div
               variants={staggerGroup(0.05, 0.1)}
               {...revealOnMount}
-              className="relative z-0 flex-1 -mt-[76px] pt-[92px] sm:-mt-[64px] sm:pt-[84px] rounded-t-sheet bg-[#212124] shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] px-5 sm:px-6 pb-8"
+              // No inset highlight here: on the grey panel it read as a white hairline drawn across
+              // the sheet, under the photo. The glass above it keeps the lit edge of the sheet.
+              className="relative z-0 flex-1 -mt-[76px] pt-[92px] sm:-mt-[64px] sm:pt-[84px] rounded-t-sheet bg-[#212124] px-5 sm:px-6 pb-8"
             >
               <motion.div variants={DETAIL_RISE} className="flex items-start justify-between gap-4">
                 <h2 id={titleId} className="text-[22px] sm:text-2xl font-semibold tracking-tight text-white leading-tight min-w-0">

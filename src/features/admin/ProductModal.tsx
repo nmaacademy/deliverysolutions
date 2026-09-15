@@ -55,7 +55,10 @@ export default function ProductModal({ item, categories, onSave, onClose }: Prop
       available: available, // Manual toggle override
       extras: item ? item.extras : [],
       // Not editable here; carried through so an edit does not wipe the product page's prep time.
-      prepTimeMinutes: item?.prepTimeMinutes
+      prepTimeMinutes: item?.prepTimeMinutes,
+      // Same reason: the "Meniul zilei" choice is made on the product card, so an edit has to hand
+      // it back untouched. A brand new product stays out of the section until it is picked there.
+      isDailyMenu: item ? item.isDailyMenu : false
     });
     onClose();
   };
