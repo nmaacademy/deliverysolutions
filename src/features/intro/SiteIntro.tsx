@@ -25,6 +25,9 @@ const VIDEO_SRC = '/videos/intro.mp4';
  */
 const VIDEO_OBJECT_POSITION = 'center';
 
+/** A little brisker than the source clip, without making movement or food shots look unnatural. */
+const INTRO_PLAYBACK_RATE = 1.3;
+
 /** The skip control fades in only after the opening moment, so it never competes with it. */
 const SKIP_AFTER_MS = 1500;
 /** How long the visitor may be held on the loader before the site is shown regardless. */
@@ -113,7 +116,11 @@ export default function SiteIntro({ onComplete }: SiteIntroProps) {
    */
   const startPlayback = useCallback(() => {
     const video = videoRef.current;
-    if (!video || !video.paused) return;
+    if (!video) return;
+
+    video.defaultPlaybackRate = INTRO_PLAYBACK_RATE;
+    video.playbackRate = INTRO_PLAYBACK_RATE;
+    if (!video.paused) return;
 
     const attempt = video.play() as Promise<void> | undefined;
     attempt?.catch(() => complete());
@@ -124,20 +131,18 @@ export default function SiteIntro({ onComplete }: SiteIntroProps) {
     startPlayback();
   }, [reducedMotion, startPlayback]);
 
-  const showLoader = !reducedMotion && !hasStarted;
-
   return (
     <motion.div
       variants={OVERLAY}
       initial="visible"
       animate="visible"
       exit="hidden"
-      transition={{ duration: 0.5, ease: EASE_OUT }}
+      transition={{ duration: 0.4, ease: EASE_OUT }}
       // Above every sheet, toast and navbar. Opaque, so the app behind it cannot be seen or clicked.
       className="fixed inset-0 z-[200] h-[100dvh] w-full overflow-hidden bg-zinc-900"
     >
       {!reducedMotion && (
-        <motion.div variants={MEDIA} transition={{ duration: 0.7, ease: EASE_OUT }} className="absolute inset-0">
+        <motion.div variants={MEDIA} transition={{ duration: 0.55, ease: EASE_OUT }} className="absolute inset-0">
           <video
             ref={videoRef}
             src={VIDEO_SRC}
@@ -167,22 +172,6 @@ export default function SiteIntro({ onComplete }: SiteIntroProps) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-gradient-to-b from-zinc-900/45 via-transparent to-zinc-900/35"
       />
-
-      {showLoader && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={FADE_IN}
-          role="status"
-          className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-zinc-300"
-        >
-          <span
-            aria-hidden="true"
-            className="h-7 w-7 animate-spin rounded-full border-2 border-white/15 border-t-[#D4EAE6]"
-          />
-          <span className="text-[13px] font-medium tracking-wide">Pregătim experiența...</span>
-        </motion.div>
-      )}
 
       {canSkip && (
         <motion.button

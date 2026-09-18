@@ -70,7 +70,7 @@ export default function SpecialOffersSection({ menuItems, onSelectItem }: Props)
                   triggerVibration(10);
                   onSelectItem(offer.item);
                 }}
-                className="group relative isolate block w-full h-[140px] sm:h-[168px] lg:h-[184px] overflow-hidden rounded-card text-left ring-1 ring-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-shadow hover:shadow-[0_16px_40px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                className="group relative isolate block w-full h-[152px] sm:h-[172px] lg:h-[188px] overflow-hidden rounded-card text-left ring-1 ring-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-shadow hover:shadow-[0_16px_40px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6] focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
               >
                 {/* The night-blue ground of the advert, lit from behind the price. */}
                 <span
@@ -105,11 +105,11 @@ export default function SpecialOffersSection({ menuItems, onSelectItem }: Props)
                     {offer.kicker}
                   </span>
 
-                  <span className="block text-[17px] sm:text-[22px] lg:text-[26px] font-sans font-bold tracking-tight text-white leading-[1.1] text-balance line-clamp-2 drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
+                  <span className="block text-[17px] sm:text-[22px] lg:text-[26px] font-sans font-bold tracking-tight text-white leading-[1.2] text-balance drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
                     {offer.title}
                   </span>
 
-                  <span className="block text-[11.5px] sm:text-[13px] text-zinc-400 leading-snug line-clamp-2">
+                  <span className="block text-[11.5px] sm:text-[13px] text-zinc-400 leading-[1.4]">
                     {offer.description}
                   </span>
 

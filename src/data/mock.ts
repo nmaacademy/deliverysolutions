@@ -290,7 +290,7 @@ export const mockOrders: Order[] = [
     total: 205,
     customerName: 'Andrei Ionescu',
     customerPhone: '0740123456',
-    time: 'Cât mai repede (30–45 min)',
+    time: 'Cât mai repede (30-45 min)',
     paymentMethod: 'card',
     createdAt: new Date(Date.now() - 15 * 60000),
     address: 'Bulevardul Magheru 12, București',

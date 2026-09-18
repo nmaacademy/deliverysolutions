@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import { revealOnMount, riseItem, staggerGroup } from '../../lib/motion';
 import { memo, useRef, useState } from 'react';
 import { Clock, Info, Loader2, LocateFixed } from 'lucide-react';
-import SoupPotIcon from '../../components/ui/SoupPotIcon';
+import BrandLogo from '../../components/brand/BrandLogo';
 import { leafletDocument, RESTAURANT_LOCATION } from '../../components/map/leafletDocument';
 import { CLIENT_PAGE_BOTTOM, clientTopPadding } from '../client/layout';
 
@@ -19,7 +19,7 @@ const CUSTOMER_MAP_HTML = leafletDocument({
     var map = createMap(RESTAURANT, 15, { zoomControl: true });
     L.marker(RESTAURANT, { icon: createIcon('restaurant'), zIndexOffset: 900 })
       .addTo(map)
-      .bindPopup('Restaurant Demo');
+      .bindPopup('Rețetar demo');
 
     var meMarker = null;
     var FLY = { animate: !REDUCED_MOTION, duration: 1.2 };
@@ -42,9 +42,9 @@ const CUSTOMER_MAP_HTML = leafletDocument({
 });
 
 const DEMO_HOURS = [
-  { days: 'Luni – Joi', hours: '10:00 – 23:00' },
-  { days: 'Vineri – Sâmbătă', hours: '10:00 – 01:00' },
-  { days: 'Duminică', hours: '11:00 – 22:00' },
+  { days: 'Luni - Joi', hours: '10:00 - 23:00' },
+  { days: 'Vineri - Sâmbătă', hours: '10:00 - 01:00' },
+  { days: 'Duminică', hours: '11:00 - 22:00' },
 ];
 
 type LocateState = 'idle' | 'locating' | 'denied';
@@ -95,19 +95,19 @@ function CustomerMapScreen({ trackerCount = 0 }: Props) {
               title="Centrează pe restaurant"
               className="w-11 h-11 grid place-items-center rounded-full bg-zinc-800/90 backdrop-blur-md border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.5)] text-[#D4EAE6] hover:bg-zinc-700/90 active:scale-95 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4EAE6]"
             >
-              <SoupPotIcon size={20} />
+              <BrandLogo className="w-8 h-8" alt="" />
             </button>
           </div>
         </motion.div>
 
         {/* Restaurant card */}
         <motion.section variants={riseItem} className="mt-4 rounded-card bg-white/[0.05] glass-edge p-5">
-          <div className="flex items-start gap-3">
-            <span className="w-11 h-11 shrink-0 grid place-items-center rounded-full bg-[#D4EAE6]/10 text-[#D4EAE6]">
-              <SoupPotIcon size={22} />
+          <div className="flex items-center gap-4">
+            <span className="w-20 h-[68px] shrink-0 grid place-items-center rounded-tile bg-[#122F36] border border-[#EBDFC3]/15 p-1 shadow-[inset_0_1px_0_rgba(235,223,195,0.08)]">
+              <BrandLogo className="w-full h-full" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-[18px] font-semibold tracking-tight text-white">Restaurant Demo</h2>
+              <h2 className="text-[18px] font-semibold tracking-tight text-white">Rețetar demo</h2>
               <p className="text-[13px] text-zinc-400 mt-0.5">Calea Victoriei, București · locație demo</p>
             </div>
           </div>

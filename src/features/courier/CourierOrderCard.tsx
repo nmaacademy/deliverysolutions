@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Phone, Navigation, ChevronRight, Clock, ArrowRight, Store, MapPin } from 'lucide-react';
+import { Phone, Navigation, ChevronRight, Clock, ArrowRight, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Order, OrderStatus } from '../../types';
 import { courierNextStatus } from '../../lib/orderFlow';
@@ -8,6 +8,7 @@ import { distanceKm, formatKm } from '../../lib/geo';
 import { triggerVibration } from '../../lib/haptics';
 import { RESTAURANT_LOCATION } from '../../components/map/leafletDocument';
 import { RouteMiniMap, RouteInfo } from '../../components/map/RouteMiniMap';
+import BrandLogo from '../../components/brand/BrandLogo';
 
 const STATUS_STYLE: Partial<Record<OrderStatus, { label: string; dot: string; text: string; live?: boolean }>> = {
   'Gata de ridicare': { label: 'Gata de ridicare', dot: 'bg-[#D4EAE6]', text: 'text-[#D4EAE6]' },
@@ -110,12 +111,12 @@ export default function CourierOrderCard({ order, index, isActiveRun, isNew = fa
       <ol className="relative mx-5 pb-1">
         <span aria-hidden className="absolute left-[15px] top-8 bottom-8 border-l border-dashed border-white/15" />
         <li className="flex items-center gap-3 py-2">
-          <span className="w-8 h-8 shrink-0 rounded-full bg-white/[0.08] grid place-items-center text-orange-400">
-            <Store size={15} />
+          <span className="w-8 h-8 shrink-0 rounded-full bg-[#122F36] border border-[#EBDFC3]/15 grid place-items-center overflow-hidden">
+            <BrandLogo className="w-7 h-7" alt="" />
           </span>
           <div className="min-w-0">
             <p className="text-[12px] text-zinc-500">Ridicare</p>
-            <p className="text-[14px] text-zinc-200 truncate">Restaurant Demo</p>
+            <p className="text-[14px] text-zinc-200 truncate">Rețetar demo</p>
           </div>
         </li>
         <li className="flex items-center gap-3 py-2">

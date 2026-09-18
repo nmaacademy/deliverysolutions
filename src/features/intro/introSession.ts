@@ -9,7 +9,7 @@ import type { Route } from '../../lib/routes';
  * The key carries a version so a future change to the clip or the intro itself can show again to
  * people whose tab is still open, by bumping the suffix.
  */
-const SEEN_KEY = 'restaurant_intro_seen_v1';
+const SEEN_KEY = 'retetar_intro_seen_v2';
 
 /**
  * Whether the clip should play for this arrival.

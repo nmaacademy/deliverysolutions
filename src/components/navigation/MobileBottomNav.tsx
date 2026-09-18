@@ -94,6 +94,8 @@ function useCompactOnScroll(resetKey: string) {
 
 interface Props {
   page: ClientPage;
+  /** Keeps the navigation visible on the cart sheet and marks the cart tab as active. */
+  cartOpen?: boolean;
   /** Badge on the cart tab. Hidden at zero. */
   cartCount: number;
   /** Called with the chosen tab, including the page already open (used to scroll back to the top). */
@@ -115,10 +117,11 @@ interface Gesture {
  * lights up the tab it is over, and on release always snaps onto a whole tab and opens it. Reading down
  * a page folds the bar into a narrower, lower strip of icons, like Instagram's; scrolling up unfolds it.
  */
-export default function MobileBottomNav({ page, cartCount, onNavigate }: Props) {
+export default function MobileBottomNav({ page, cartOpen = false, cartCount, onNavigate }: Props) {
   const reduceMotion = useReducedMotion();
-  const pageIndex = Math.max(0, ITEMS.findIndex(item => item.tab === page));
-  const [compact, setCompact] = useCompactOnScroll(page);
+  const activeTab: ClientTab = cartOpen ? 'cart' : page;
+  const pageIndex = Math.max(0, ITEMS.findIndex(item => item.tab === activeTab));
+  const [compact, setCompact] = useCompactOnScroll(activeTab);
 
   // 0 is the full bar, 1 the compact one. Real sizes are derived from it instead of a scale transform,
   // so the glass, the icons and the labels stay pixel-sharp all the way through and never re-render
@@ -169,9 +172,8 @@ export default function MobileBottomNav({ page, cartCount, onNavigate }: Props) 
 
   const select = (index: number) => {
     const { tab } = ITEMS[index];
-    // The cart is pushed over the app rather than being a page, so the lens stays on the page below.
-    moveLens(tab === 'cart' ? pageIndex : index);
-    if (tab !== page && tab !== 'cart') triggerVibration(12);
+    moveLens(index);
+    if (tab !== activeTab) triggerVibration(12);
     onNavigate(tab);
   };
 
@@ -267,7 +269,7 @@ export default function MobileBottomNav({ page, cartCount, onNavigate }: Props) 
               <button
                 key={tab}
                 type="button"
-                aria-current={tab === page ? 'page' : undefined}
+                aria-current={tab === activeTab ? 'page' : undefined}
                 aria-label={isCart && cartCount > 0 ? `Coș, ${cartCount} produse` : undefined}
                 // Pointer taps are handled by the track; this only answers the keyboard and screen readers.
                 onClick={event => {

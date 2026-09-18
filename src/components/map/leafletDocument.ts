@@ -37,6 +37,23 @@ const BASE_CSS = `
     width: 16px; height: 6px; margin-left: -8px; border-radius: 50%;
     background: rgba(0,0,0,0.55); filter: blur(2px);
   }
+  .restaurant-brand-pin {
+    position: relative; width: 52px; height: 58px;
+    transform-origin: 50% 78%;
+    animation: restaurant-pin-arrive 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.18);
+  }
+  .restaurant-brand-body {
+    display: block; width: 52px; height: 58px;
+    filter: drop-shadow(0 5px 6px rgba(0,0,0,0.55));
+  }
+  .restaurant-brand-art {
+    position: absolute; z-index: 1; left: 8px; top: 5px;
+    display: block; width: 36px; height: 31px; object-fit: contain;
+  }
+  @keyframes restaurant-pin-arrive {
+    from { transform: translateY(-10px) scale(0.78); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
   @keyframes pin-drop {
     from { transform: translateY(-14px) scale(0.85); opacity: 0; }
     to { transform: none; opacity: 1; }
@@ -51,6 +68,7 @@ const BASE_CSS = `
   }
   @media (prefers-reduced-motion: reduce) {
     .map-pin .pin-svg { animation: none; }
+    .restaurant-brand-pin { animation: none; }
     .courier-car { transition: none; }
   }
 `;
@@ -80,6 +98,8 @@ const BASE_SCRIPT = `
   var GLYPH_LINES = {
     restaurant: 'M12.5 10 16.4 3.9a1.8 1.8 0 0 1 3.1 1.8'
   };
+  var RESTAURANT_PIN_START = 'M26 43C26 43 47 43 47 22A21 21 0 1 0 5 22C5 43 26 43 26 43Z';
+  var RESTAURANT_PIN_END = 'M26 56C26 56 47 37 47 22A21 21 0 1 0 5 22C5 37 26 56 26 56Z';
   // Top-down car, nose up (0deg = north): body, mirrors, windows, roof, head/tail lights.
   var CAR_SVG = '<svg class="courier-car" viewBox="0 0 24 44">' +
     '<rect x="0.6" y="13" width="2.6" height="2" rx="1" fill="#fff"/><rect x="20.8" y="13" width="2.6" height="2" rx="1" fill="#fff"/>' +
@@ -110,6 +130,14 @@ const BASE_SCRIPT = `
   }
 
   function createIcon(type) {
+    if (type === 'restaurant') {
+      var morph = REDUCED_MOTION ? '' : '<animate attributeName="d" dur="0.52s" values="' + RESTAURANT_PIN_START + ';' + RESTAURANT_PIN_START + ';' + RESTAURANT_PIN_END + '" keyTimes="0;0.42;1" fill="freeze"/>';
+      return L.divIcon({
+        className: 'pin-restaurant',
+        html: '<div class="restaurant-brand-pin"><svg class="restaurant-brand-body" viewBox="0 0 52 58" aria-hidden="true"><path d="' + RESTAURANT_PIN_END + '" fill="#122F36">' + morph + '</path></svg><img class="restaurant-brand-art" src="/branding/retetar-logo.svg?v=2" alt="" /></div>',
+        iconSize: [52, 58], iconAnchor: [26, 56], popupAnchor: [0, -50]
+      });
+    }
     if (type === 'courier') {
       return L.divIcon({
         className: 'pin-courier',

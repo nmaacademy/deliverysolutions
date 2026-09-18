@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { OrderType } from '../../types';
 import { triggerVibration } from '../../lib/haptics';
 import { SegmentedControl } from '../ui/SegmentedControl';
+import BrandLogo from '../brand/BrandLogo';
 
 interface ClientHeaderControlsProps {
   orderType: OrderType;
@@ -17,8 +18,10 @@ interface ClientHeaderControlsProps {
  */
 function ClientHeaderControls({ orderType, setOrderType, onOpenSearch }: ClientHeaderControlsProps) {
   return (
-    <header className="flex items-center justify-between gap-3">
-      <div className="min-w-0 flex-1 max-w-[240px] sm:max-w-[260px]">
+    <header className="grid grid-cols-[68px_minmax(0,1fr)_44px] sm:grid-cols-[76px_minmax(0,260px)_44px] items-center gap-3 sm:justify-between">
+      <BrandLogo className="w-[68px] sm:w-[76px] h-auto" />
+
+      <div className="min-w-0 w-full">
         <SegmentedControl
           id="order-type"
           size="sm"

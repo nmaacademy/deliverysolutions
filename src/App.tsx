@@ -12,7 +12,6 @@ import ScrollRestore from './features/client/ScrollRestore';
 import PageTransition from './features/client/PageTransition';
 import ScreenLayer from './features/client/ScreenLayer';
 import TopEdgeFade from './features/client/TopEdgeFade';
-import { SheetBackdrop } from './components/ui/SheetBackdrop';
 import { TRACKER_TOP } from './features/client/layout';
 import { EASE_OUT, ENTER, EXIT, SHEET_ENTER, SHEET_EXIT } from './lib/motion';
 import HomeScreen from './features/home/HomeScreen';
@@ -45,6 +44,7 @@ type ViewState = 'client' | 'cart' | 'confirmation' | 'admin' | 'kitchen' | 'cou
  * over it. It moves on the sheet's own timing, so the sheet, its backdrop and the app read as one motion.
  */
 const APP_RECEDED = { opacity: 0.4, transform: 'scale(0.94)' };
+const APP_UNDER_CART = { opacity: 0.72, transform: 'scale(0.985)' };
 // The transform is dropped once the app is back, or it would become the containing block of fixed elements.
 const APP_PRESENT = { opacity: 1, transform: 'scale(1)', transitionEnd: { transform: 'none' } };
 
@@ -66,7 +66,7 @@ const SITE_SHOWN = {
 /** Reduced motion gets the same handover with nothing moving or blurring. */
 const SITE_HIDDEN_PLAIN = { opacity: 0 };
 const SITE_SHOWN_PLAIN = { opacity: 1 };
-const SITE_REVEAL = { duration: 0.7, ease: EASE_OUT };
+const SITE_REVEAL = { duration: 0.55, ease: EASE_OUT };
 
 /** Tab order along the navbar, so a page change knows which way to slide. */
 const CLIENT_PAGE_ORDER: ClientPage[] = ['home', 'map', 'menu', 'profile'];
@@ -471,13 +471,14 @@ export default function App() {
           blow far past the viewport, and overflow-x-hidden would then silently clip the rest. */}
       <main className="grid grid-cols-[minmax(0,1fr)] [grid-template-areas:'main'] relative min-h-[100svh]">
         <AnimatePresence>
-          {currentView === 'client' && (
+          {(currentView === 'client' || currentView === 'cart') && (
             <ScreenLayer
               key="client"
               className="[grid-area:main] bg-zinc-900 w-full min-h-[100svh]"
               style={{ transformOrigin: clientOrigin }}
               initial={APP_RECEDED}
-              animate={APP_PRESENT}
+              animate={currentView === 'cart' ? APP_UNDER_CART : APP_PRESENT}
+              inert={currentView === 'cart'}
               // Stepping back happens while a sheet rises, coming back while it drops away.
               exit={{ ...APP_RECEDED, transition: SHEET_ENTER }}
               transition={SHEET_EXIT}
@@ -532,15 +533,14 @@ export default function App() {
             </ScreenLayer>
           )}
 
-          {/* The cart is a sheet: it rises over the app, which steps back while a blur builds up over it. */}
-          {currentView === 'cart' && <SheetBackdrop key="cart-backdrop" className="z-[29] pointer-events-none" />}
+          {/* The cart floats over the still-visible app; the navbar remains available above both. */}
           {currentView === 'cart' && (
             <ScreenLayer
               key="cart"
-              className="[grid-area:main] bg-zinc-900 z-30 w-full min-h-[100svh] shadow-[0_-24px_60px_rgba(0,0,0,0.5)]"
-              initial={{ transform: 'translateY(100vh)' }}
-              animate={{ transform: 'translateY(0vh)', transitionEnd: { transform: 'none' } }}
-              exit={{ transform: 'translateY(100vh)', transition: SHEET_EXIT }}
+              className="[grid-area:main] mt-[calc(env(safe-area-inset-top)+8px)] bg-zinc-900/95 backdrop-blur-2xl rounded-t-[32px] border-t border-white/10 z-30 w-full min-h-[calc(100svh-env(safe-area-inset-top)-8px)] shadow-[0_-16px_48px_rgba(0,0,0,0.32)]"
+              initial={{ opacity: 0, transform: 'translateY(18vh)' }}
+              animate={{ opacity: 1, transform: 'translateY(0)', transitionEnd: { transform: 'none' } }}
+              exit={{ opacity: 0, transform: 'translateY(12vh)', transition: SHEET_EXIT }}
               transition={SHEET_ENTER}
             >
               <CartScreen
@@ -641,12 +641,16 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* The customer app's own navigation. It slides away behind the cart, checkout, tracking and
-          staff screens. A product sheet or the search simply covers it: taking it out there made it
-          rise back in, see-through, every time a sheet closed. */}
+      {/* The customer navigation stays present on the cart, so moving between shopping tabs remains fluid. */}
       <AnimatePresence>
-        {currentView === 'client' && (
-          <MobileBottomNav key="nav" page={clientPage} cartCount={cartItemsCount} onNavigate={goToClientTab} />
+        {(currentView === 'client' || currentView === 'cart') && (
+          <MobileBottomNav
+            key="nav"
+            page={clientPage}
+            cartOpen={currentView === 'cart'}
+            cartCount={cartItemsCount}
+            onNavigate={goToClientTab}
+          />
         )}
       </AnimatePresence>
 

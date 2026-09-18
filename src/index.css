@@ -22,6 +22,9 @@
 }
 
 :root {
+  --brand-ink: #122f36;
+  --brand-cream: #ebdfc3;
+  --brand-opal: #d4eae6;
   /* Footprint of the fixed customer navbar: the 64px pill plus its gap to the bottom edge, which grows
      into the home-indicator safe area on phones that have one. Customer pages pad their bottom by this. */
   --client-nav-space: calc(64px + max(12px, env(safe-area-inset-bottom)));

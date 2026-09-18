@@ -157,7 +157,7 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
 
   if (cart.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto px-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-8 min-h-[100svh] flex flex-col">
+      <div className="max-w-2xl mx-auto px-4 pt-4 pb-28 min-h-[calc(100svh-env(safe-area-inset-top)-8px)] flex flex-col">
         <button onClick={onBack} className="flex items-center justify-center min-h-[44px] min-w-[44px] text-zinc-400 hover:text-white transition self-start mb-12">
           <ChevronLeft size={20} className="mr-1" />
           Înapoi la meniu
@@ -174,10 +174,10 @@ export default function CartScreen({ cart, setCart, orderType, onBack, onPlaceOr
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-4 sm:py-8 pb-40 sm:pb-32 min-h-[100svh]">
+    <div className="max-w-5xl mx-auto py-4 sm:py-8 pb-40 sm:pb-32 min-h-[calc(100svh-env(safe-area-inset-top)-8px)]">
       
       {/* iOS Style Sticky Top Bar */}
-      <div className="sticky top-0 z-40 bg-zinc-900/80 backdrop-blur-2xl border-b border-white/[0.06] px-4 sm:px-6 pt-[calc(env(safe-area-inset-top)+16px)] pb-4 flex items-center justify-between mb-6 sm:mb-8">
+      <div className="sticky top-0 z-40 bg-zinc-900/80 backdrop-blur-2xl border-b border-white/[0.06] px-4 sm:px-6 pt-4 pb-4 flex items-center justify-between mb-6 sm:mb-8">
         <button onClick={onBack} className="flex items-center justify-center min-h-[44px] text-[#D4EAE6] hover:text-white transition active:scale-95 font-medium -ml-2 px-2">
           <ChevronLeft size={22} className="mr-0.5" />
           <span>Înapoi</span>

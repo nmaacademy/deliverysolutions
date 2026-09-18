@@ -1,7 +1,7 @@
 {
-  "name": "Restaurant Demo",
-  "short_name": "Restaurant",
-  "description": "Comandă de la Restaurant Demo, cu livrare sau ridicare.",
+  "name": "Rețetar demo",
+  "short_name": "Rețetar",
+  "description": "Comandă de la Rețetar demo, cu livrare sau ridicare.",
   "lang": "ro",
   "start_url": "/",
   "scope": "/",

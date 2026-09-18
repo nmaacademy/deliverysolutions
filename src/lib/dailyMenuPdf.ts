@@ -206,17 +206,20 @@ function productCard(item: MenuItem, image: RasterImage | null): Content {
   };
 }
 
-function documentHeader(now: Date): Content {
+function documentHeader(now: Date, brandLogo: string | null): Content {
   const centre = CONTENT_WIDTH / 2;
-  return {
-    stack: [
-      {
-        text: 'RESTAURANT DEMO',
+  const brand: Content = brandLogo
+    ? { image: brandLogo, width: 76, alignment: 'center', margin: [0, 0, 0, 2] }
+    : {
+        text: 'REȚETAR DEMO',
         fontSize: 8.5,
         characterSpacing: 3.4,
         color: INK_MUTED,
         alignment: 'center',
-      },
+      };
+  return {
+    stack: [
+      brand,
       {
         text: 'MENIUL ZILEI',
         fontSize: 30,
@@ -253,7 +256,12 @@ function documentHeader(now: Date): Content {
   };
 }
 
-function buildDocument(items: MenuItem[], images: (RasterImage | null)[], now: Date): TDocumentDefinitions {
+function buildDocument(
+  items: MenuItem[],
+  images: (RasterImage | null)[],
+  brandLogo: RasterImage | null,
+  now: Date,
+): TDocumentDefinitions {
   const generatedAt = `${formatRomanianDate(now)}, ${formatTime(now)}`;
 
   return {
@@ -263,13 +271,13 @@ function buildDocument(items: MenuItem[], images: (RasterImage | null)[], now: D
     defaultStyle: { font: 'Roboto', fontSize: 10, color: INK },
     info: {
       title: `Meniul zilei · ${formatRomanianDate(now)}`,
-      author: 'Restaurant Demo',
+      author: 'Rețetar demo',
       subject: 'Meniul zilei',
     },
     background: () => ({
       canvas: [{ type: 'rect', x: 0, y: 0, w: PAGE_WIDTH, h: PAGE_HEIGHT, color: PAPER }],
     }),
-    content: [documentHeader(now), ...items.map((item, index) => productCard(item, images[index]))],
+    content: [documentHeader(now, brandLogo?.dataUrl ?? null), ...items.map((item, index) => productCard(item, images[index]))],
     footer: (currentPage: number, pageCount: number) => ({
       margin: [MARGIN_X, 18, MARGIN_X, 0],
       columns: [
@@ -299,11 +307,12 @@ export async function exportDailyMenuPdf(items: MenuItem[]): Promise<void> {
 
   // The library and the photos are independent, and no photo can reject: a broken one resolves to
   // `null` and becomes a placeholder, so one dead link never costs the whole export.
-  const [pdfMake, images] = await Promise.all([
+  const [pdfMake, images, brandLogo] = await Promise.all([
     loadPdfMake(),
     Promise.all(items.map(item => toRasterImage(item.image))),
+    toRasterImage('/icons/icon-512.png', 512),
   ]);
 
   // `download` saves the blob straight to disk; it never opens the browser's print dialog.
-  await pdfMake.createPdf(buildDocument(items, images, now)).download(fileNameFor(now));
+  await pdfMake.createPdf(buildDocument(items, images, brandLogo, now)).download(fileNameFor(now));
 }

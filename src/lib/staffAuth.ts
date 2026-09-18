@@ -11,7 +11,7 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
 };
 
 /** Name the account is listed under in the authenticator app. */
-export const TOTP_ISSUER = 'Restaurant Demo';
+export const TOTP_ISSUER = 'Rețetar demo';
 
 // Public demo keys, used until VITE_TOTP_SECRET_<ROLE> (base32) is set.
 const DEMO_SECRETS: Record<StaffRole, string> = {
